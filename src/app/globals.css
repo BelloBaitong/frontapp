@@ -10,6 +10,13 @@
   box-sizing: border-box;
   font-family: "Manrope", sans-serif;
 }
+body {
+  background-image: url('/Background.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed; /* ถ้าอยากไม่ให้เลื่อน */
+}
 
 /* START: General styles */
 .max-width {
