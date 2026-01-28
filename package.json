@@ -8,7 +8,11 @@
     "start": "next start"
   },
   "dependencies": {
+    "@nestjs/passport": "^11.0.5",
+    "lucide-react": "^0.562.0",
     "next": "16.0.8",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
     "react": "19.2.1",
     "react-dom": "19.2.1"
   },

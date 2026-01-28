@@ -1,70 +1,42 @@
 "use client";
 
-import { CourseCard,ReviewCard } from "@/components";
+import { CourseCard,ReviewCard,CourseSearchBox } from "@/components";
+import type { Course } from "@/types/course";
+import Link from "next/link";
+import ViewAllButton from "@/components/ViewAllButton";
+import type { PopularCourse } from "@/types/popularcourse";
+import type { Review } from "@/types/review";
 
-const popularCourses = [
-  {
-    code: "05506045",
-    titleEn: "MACHINE LEARNING",
-    titleTh: "การเรียนรู้ของเครื่องจักร",
-    rating: 5.0,
-    imageSrc: "/ml.png", // ใส่ชื่อไฟล์จริงใน public
-  },
-  {
-    code: "05506056",
-    titleEn: "SOFTWARE TESTING",
-    titleTh: "การทดสอบซอฟต์แวร์",
-    rating: 5.0,
-    imageSrc: "/testing.png",
-  },
-  {
-    code: "05506108",
-    titleEn: "SOFTWARE DESIGN",
-    titleTh: "การออกแบบซอฟต์แวร์",
-    rating: 5.0,
-    imageSrc: "/design.png",
-  },
-  {
-    code: "90642211",
-    titleEn: "CODING WITH PYTHON",
-    titleTh: "เขียนโค้ดด้วยไพทอน",
-    rating: 5.0,
-    imageSrc: "/python.png",
-  },
-];
 
-const courseReviews = [
-  {
-    courseCode: "05506045",
-    courseName: "MACHINE LEARNING",
-    studentName: "Name",
-    comment: "เหมาะกับคนชอบความท้าทาย วิชานี้เข้มข้นแต่สนุก",
-    rating: 5,
-  },
-  {
-    courseCode: "05506056",
-    courseName: "SOFTWARE TESTING",
-    studentName: "Name",
-    comment: "สอยยากนิดนึง แต่ได้ความรู้แน่นเรื่องระบบทดสอบ",
-    rating: 4,
-  },
-  {
-    courseCode: "05506108",
-    courseName: "SOFTWARE DESIGN",
-    studentName: "Name",
-    comment: "เป็นวิชาที่ช่วยต่อยอดทักษะได้ดีมาก",
-    rating: 5,
-  },
-  {
-    courseCode: "90642211",
-    courseName: "CODING WITH PYTHON",
-    studentName: "Name",
-    comment: "เนื้อหาน่าสนใจ เข้าใจง่าย อาจารย์สอนดี",
-    rating: 5,
-  },
-];
+const HomeSection = ({ courses, popularCourses,reviews }:
+   { courses: Course[]; popularCourses: PopularCourse[]; reviews: Review[]
+    }) => {
+    const dbCourses = courses.map((c) => ({
+    code: c.courseCode,
+    titleEn: c.courseNameEn ?? c.courseName ?? "-",      // ถ้ามี EN ให้ใช้ EN
+    titleTh: c.courseNameTh ?? c.description ?? "-",     // ถ้ามี TH ให้ใช้ TH
+    rating: 5.0, // ตอนนี้หลังบ้านยังไม่มี rating -> ใส่คงที่ไปก่อน
+    imageSrc: c.imageUrl ?? "", 
+}));
 
-const HomeSection = () => {
+  const popularCards = (popularCourses?.length ? popularCourses : []).map((c: any) => ({
+    code: c.courseCode ?? c.code,
+    titleEn: c.courseNameEn ?? c.titleEn ?? "-",
+    titleTh: c.courseNameTh ?? c.titleTh ?? "-",
+    rating: Number(c.avgRating ?? c.rating ?? 0) || 0,
+    imageSrc: (c.imageUrl && c.imageUrl.trim().length > 0) ? c.imageUrl : "",
+  }));
+
+  const reviewCards = (reviews?.length ? reviews : []).map((r) => ({
+  courseCode: r.course?.courseCode ?? "-", // ✅ รหัสวิชาจาก course ที่ซ้อนมา
+  courseName: r.course?.courseNameEn ?? r.course?.courseNameTh ?? "-", // ✅ ชื่อวิชา
+  studentName: r.isAnonymous ? "Anonymous" : "Name", // ✅ ยังไม่มีชื่อ user จริงก็ใส่ชั่วคราว
+  comment: r.comment ?? "",
+  rating: Number(r.rating ?? 0) || 0,
+}));
+
+
+
   return (
     <main className="w-full min-h-screen pt-28 pb-16 px-4 sm:px-8">
       <section className="max-w-6xl mx-auto flex flex-col gap-10">
@@ -77,13 +49,10 @@ const HomeSection = () => {
 
         {/* กล่องค้นหา */}
         <div className="w-full flex justify-center">
-          <div className="w-full sm:w-[70%] bg-white/95 rounded-full shadow-lg flex items-center gap-4 px-6 py-3">
-            <span className="text-2xl text-[#B58AE6]">🔍</span>
-            <input
-              type="text"
-              placeholder="วิชา...."
-              className="flex-1 bg-transparent outline-none text-[#777] placeholder:text-[#D1D1D1] text-base"
-            />
+          <div className="w-full sm:w-[70%]">
+      
+            <CourseSearchBox placeholder="วิชา..." />
+            
           </div>
         </div>
 
@@ -94,37 +63,43 @@ const HomeSection = () => {
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-            {popularCourses.map((course) => (
-              <CourseCard key={course.code} {...course} />
+            {popularCards.map((course) => (
+              <Link key={course.code} href={`/courses/${course.code}`} className="block">
+                <CourseCard {...course} />
+              </Link>
             ))}
           </div>
         </section>
 
         {/* รายวิชา (เปล่า ๆ รอข้อมูลจริง) */}
         <section className="flex flex-col gap-4">
-          <h2 className="text-lg sm:text-xl font-extrabold text-white drop-shadow-sm">
-            รายวิชา
-          </h2>
+           <div className="flex items-center justify-between">
+              <h2 className="text-lg sm:text-xl font-extrabold text-white drop-shadow-sm">
+                รายวิชา
+              </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-            {Array.from({ length: 4 }).map((_, idx) => (
-              <div
-                key={idx}
-                className="rounded-[24px] bg-white/60 border border-white/60 min-h-[230px]"
-              />
-            ))}
-          </div>
+              <ViewAllButton href="/course" />
+           </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+                  {dbCourses.slice(0, 8).map((course) => (
+                    <Link key={course.code} href={`/courses/${course.code}`} className="block">
+                        <CourseCard {...course} />
+                    </Link>
+                ))}
+
+           </div>
         </section>
 
         {/* รีวิวจากนักศึกษา */}
          {/* รีวิวรายวิชา */}
       <section className="flex flex-col gap-4 mt-8">
-        <h2 className="text-lg sm:text-xl font-extrabold text-[#E2C4FF] drop-shadow-sm">
+        <h2 className="text-lg sm:text-xl font-extrabold text-[#ffffff] drop-shadow-sm">
           รีวิวรายวิชา
         </h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-          {courseReviews.map((review) => (
+          {reviewCards.map((review) => (
             <ReviewCard key={review.courseCode + review.studentName} {...review} />
           ))}
         </div>
