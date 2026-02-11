@@ -8,4 +8,7 @@ export interface Review {
   course: Course;         // มาจาก backend แบบซ้อน
   createdAt: string;
   updatedAt: string;
+  userName?: string | null;
+  userEmail?: string | null;
 }
+

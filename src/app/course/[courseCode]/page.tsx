@@ -11,14 +11,25 @@ async function getCourseByCode(courseCode: string): Promise<Course | null> {
   return res.json();
 }
 
-async function getReviewsByCourseCode(courseCode: string): Promise<Review[]> {
-  const res = await fetch(
-    `http://localhost:3001/course/code/${courseCode}/reviews`,
-    { cache: "no-store" }
-  );
+// ✅ เปลี่ยนไปดึงรีวิวด้วย courseId (เพื่อให้ได้ user.name)
+async function getReviewsByCourseId(courseId: number): Promise<Review[]> {
+  const res = await fetch(`http://localhost:3001/course/${courseId}/review`, {
+    cache: "no-store",
+  });
   if (!res.ok) return [];
 
-  const reviews = (await res.json()) as Review[];
+  // response จาก backend มี user: { name, email, ... }
+  const raw = (await res.json()) as Array<
+    Review & { user?: { name?: string | null; email?: string | null } }
+  >;
+
+  // ✅ แปลงให้เข้ากับ Review type ที่คุณมี (userName/userEmail)
+  const reviews: Review[] = raw.map((r) => ({
+    ...r,
+    userName: r.user?.name ?? null,
+    userEmail: r.user?.email ?? null,
+  }));
+
   return reviews.sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
@@ -27,14 +38,12 @@ async function getReviewsByCourseCode(courseCode: string): Promise<Review[]> {
 export default async function CourseDetailPage({
   params,
 }: {
-  params: Promise<{ courseCode: string }>; // ✅ เปลี่ยนตรงนี้
+  params: Promise<{ courseCode: string }>;
 }) {
-  const { courseCode } = await params; // ✅ และ await ตรงนี้
+  const { courseCode } = await params;
 
-  const [course, reviews] = await Promise.all([
-    getCourseByCode(courseCode),
-    getReviewsByCourseCode(courseCode),
-  ]);
+  // ✅ ต้องดึง course ก่อน เพื่อเอา course.id ไปยิงรีวิว
+  const course = await getCourseByCode(courseCode);
 
   if (!course) {
     return (
@@ -46,6 +55,8 @@ export default async function CourseDetailPage({
       </main>
     );
   }
+
+  const reviews = await getReviewsByCourseId(course.id);
 
   return <CourseDetailSection course={course} reviews={reviews} />;
 }

@@ -2,6 +2,8 @@
 
 import type { Course } from "@/types/course";
 import type { Review } from "@/types/review";
+import WriteReviewButton from "@/components/WriteReviewButton";
+
 
 
 function formatCategoryTh(category?: string) {
@@ -50,6 +52,7 @@ export default function CourseDetailSection({
   const titleEn = course.courseNameEn ?? "-";
   const titleTh = course.courseNameTh ?? "-";
   const categoryTh = formatCategoryTh(course.category);
+  
 
   return (
     <main className="w-full min-h-screen pt-28 pb-16 px-4 sm:px-8">
@@ -119,10 +122,12 @@ export default function CourseDetailSection({
             <h2 className="text-xl sm:text-2xl font-extrabold text-black">
               รีวิวรายวิชา
             </h2>
-            <p className="text-sm text-gray-600">
-              ล่าสุดก่อน • ทั้งหมด {reviewCount} รีวิว
-            </p>
+            <WriteReviewButton courseCode={course.courseCode} />
           </div>
+
+           <p className="text-sm text-gray-600">
+            ทั้งหมด {reviewCount} รีวิว
+            </p>
 
           {reviewCount === 0 ? (
             <div className="mt-4 rounded-2xl bg-white/70 border border-black/5 p-5 text-gray-600">
@@ -138,8 +143,9 @@ export default function CourseDetailSection({
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="font-bold text-black">
-                        {r.isAnonymous ? "Anonymous" : "Name"}
-                      </p>
+                            {r.isAnonymous ? "ไม่ระบุชื่อ" : (r.userName ?? r.userEmail ?? "ผู้ใช้")}
+                        </p>
+
                       <p className="text-xs text-gray-500">
                         {formatDateTime(r.createdAt)}
                       </p>

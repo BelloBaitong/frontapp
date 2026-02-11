@@ -7,6 +7,7 @@ import ViewAllButton from "./ViewAllButton";
 import CoursesSection from "./CoursesSection";
 import CourseDetailSection from "./CourseDetailSection";
 import CourseSearchBox from "./CourseSearchBox";
+import ChatShell from "./chat/ChatShell";
 
 export { 
     HomeSection,
@@ -17,7 +18,8 @@ export {
     ViewAllButton,
     CoursesSection,
     CourseDetailSection,
-    CourseSearchBox
+    CourseSearchBox,
+    ChatShell
     
 
 };

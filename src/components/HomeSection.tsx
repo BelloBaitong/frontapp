@@ -30,7 +30,7 @@ const HomeSection = ({ courses, popularCourses,reviews }:
   const reviewCards = (reviews?.length ? reviews : []).map((r) => ({
   courseCode: r.course?.courseCode ?? "-", // ✅ รหัสวิชาจาก course ที่ซ้อนมา
   courseName: r.course?.courseNameEn ?? r.course?.courseNameTh ?? "-", // ✅ ชื่อวิชา
-  studentName: r.isAnonymous ? "Anonymous" : "Name", // ✅ ยังไม่มีชื่อ user จริงก็ใส่ชั่วคราว
+  userName: r.isAnonymous ? "ไม่ระบุชื่อ" : (r.userName ?? r.userEmail ?? "ผู้ใช้"), // ✅ ยังไม่มีชื่อ user จริงก็ใส่ชั่วคราว
   comment: r.comment ?? "",
   rating: Number(r.rating ?? 0) || 0,
 }));
@@ -100,7 +100,7 @@ const HomeSection = ({ courses, popularCourses,reviews }:
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
           {reviewCards.map((review) => (
-            <ReviewCard key={review.courseCode + review.studentName} {...review} />
+            <ReviewCard key={review.courseCode + review.userName} {...review} />
           ))}
         </div>
       </section>

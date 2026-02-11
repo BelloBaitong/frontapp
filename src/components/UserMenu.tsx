@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clearToken, getToken, parseJwt } from "@/lib/auth";
 
+
 type JwtUser = {
   sub?: string | number;
   email?: string;
@@ -13,7 +14,10 @@ type JwtUser = {
 export default function UserMenu() {
   const [open, setOpen] = useState(false);
   const [token, setTokenState] = useState<string | null>(null);
-  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLDivElement | null>(null);
+  const [imgError, setImgError] = useState(false);
+
+
 
   useEffect(() => {
     // init
@@ -36,31 +40,47 @@ export default function UserMenu() {
     return parseJwt<JwtUser>(token);
   }, [token]);
 
+    useEffect(() => {
+    setImgError(false);
+  }, [user?.picture]);
+  
   if (!token) return null;
 
   const displayName = user?.name || user?.email || "Student";
+  const hasPicture = !!user?.picture && !imgError;
+
 
   return (
     <div className="relative">
-      <button
-        ref={btnRef}
-        type="button"
+    <div
+        ref={triggerRef}
+        role="button"
+        tabIndex={0}
         onClick={() => setOpen((v) => !v)}
-        className="h-10 w-10 rounded-full bg-white/70 border border-white/60 shadow flex items-center justify-center hover:bg-white/90 transition"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+          if (e.key === "Escape") setOpen(false);
+        }}
+        className="h-10 w-10 rounded-full bg-white/70 border border-white/60 shadow flex items-center justify-center hover:bg-white/90 transition cursor-pointer select-none outline-none focus:ring-2 focus:ring-black/10"
         aria-label="User menu"
+        aria-expanded={open}
       >
-        {/* ถ้ามีรูปจาก JWT ใช้รูป, ถ้าไม่มีก็ใช้ไอคอน */}
-        {user?.picture ? (
+        {hasPicture ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={user.picture}
+            src={user!.picture!}
             alt="avatar"
             className="h-9 w-9 rounded-full object-cover"
+            onError={() => setImgError(true)}
           />
         ) : (
-          <span className="text-xl">👤</span>
+          <span className="text-xl leading-none">👤</span>
         )}
-      </button>
+      </div>
+
 
       {open && (
         <>

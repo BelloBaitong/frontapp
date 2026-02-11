@@ -1,7 +1,7 @@
 // src/app/auth/callback/page.tsx
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setToken, consumeReturnTo } from "@/lib/auth";
 

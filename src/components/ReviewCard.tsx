@@ -1,7 +1,7 @@
 interface ReviewCardProps {
   courseCode: string;
   courseName: string;
-  studentName: string;
+  userName: string;
   comment: string;
   rating: number; // 1–5
 }
@@ -9,7 +9,7 @@ interface ReviewCardProps {
 export default function ReviewCard({
   courseCode,
   courseName,
-  studentName,
+  userName,
   comment,
   rating,
 }: ReviewCardProps) {
@@ -25,7 +25,7 @@ export default function ReviewCard({
       <p className="mt-1 text-xs text-[#999]">
         ชื่อ
       </p>
-      <p className="text-sm font-semibold">{studentName}</p>
+      <p className="text-sm font-semibold">{userName}</p>
 
       <p className="mt-2 text-xs text-[#777] line-clamp-3">
         {comment}
