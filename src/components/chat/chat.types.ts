@@ -11,5 +11,4 @@ export type ChatSession = {
   id: string;
   title: string;
   createdAt: string; // ISO
-  updatedAt: string; // ISO
 };

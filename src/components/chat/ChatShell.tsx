@@ -1,10 +1,17 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-import type { ChatMessage, ChatSession } from "./chat.types";
-import { lsGetMessages, lsGetSessions, lsSaveMessages, lsSaveSessions, newId } from "./chat.storage";
+import type { ChatMessage, ChatSession } from './chat.types';
+
+import {
+  chatCreateSession,
+  chatListMessages,
+  chatListSessions,
+  chatSendMessage,
+  ApiError,
+} from '@/lib/api';
 
 function formatTime(iso: string) {
   try {
@@ -14,259 +21,307 @@ function formatTime(iso: string) {
   }
 }
 
-function buildTitleFromFirstUserMsg(text: string) {
-  const t = text.trim();
-  if (!t) return "แชทใหม่";
-  return t.length > 22 ? t.slice(0, 22) + "…" : t;
+function newId() {
+  return crypto?.randomUUID?.() ?? `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 export default function ChatShell() {
   const router = useRouter();
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeId, setActiveId] = useState<string>("");
+  const [activeId, setActiveId] = useState<string>('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isBooting, setIsBooting] = useState(true);
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // init
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeId),
+    [sessions, activeId],
+  );
+
+  // Boot: load sessions -> pick first -> load messages
   useEffect(() => {
-    const ss = lsGetSessions();
-    setSessions(ss);
+    let alive = true;
 
-    // ถ้ายังไม่มี session -> สร้างอัตโนมัติ
-    if (ss.length === 0) {
-      const now = new Date().toISOString();
-      const s: ChatSession = {
-        id: newId("session"),
-        title: "วิชาที่เรียนง่าย",
-        createdAt: now,
-        updatedAt: now,
-      };
-      const next = [s];
-      setSessions(next);
-      lsSaveSessions(next);
-      setActiveId(s.id);
-      setMessages([]);
-      lsSaveMessages(s.id, []);
-      return;
-    }
+    (async () => {
+      setIsBooting(true);
+      try {
+        const sess = await chatListSessions();
+        if (!alive) return;
 
-    // เลือก session ล่าสุด
-    const sorted = [...ss].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    const pick = sorted[0];
-    setActiveId(pick.id);
-    setMessages(lsGetMessages(pick.id));
+        if (sess.length > 0) {
+          setSessions(sess as any);
+          const firstId = sess[0].id;
+          setActiveId(firstId);
+
+          const msgs = await chatListMessages(firstId);
+          if (!alive) return;
+          setMessages(msgs as any);
+        } else {
+          const created = await chatCreateSession('วิชาที่เรียนง่าย');
+          if (!alive) return;
+
+          setSessions([created] as any);
+          setActiveId(created.id);
+
+          const msgs = await chatListMessages(created.id);
+          if (!alive) return;
+          setMessages(msgs as any);
+        }
+      } catch (e: any) {
+        if (e instanceof ApiError && e.status === 401) {
+          router.push('/auth');
+          return;
+        }
+        console.error(e);
+      } finally {
+        if (alive) setIsBooting(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // โหลด messages เมื่อเปลี่ยน active
+  // when activeId changes -> load messages from DB
   useEffect(() => {
     if (!activeId) return;
-    setMessages(lsGetMessages(activeId));
-  }, [activeId]);
 
-  // auto scroll
+    let alive = true;
+    (async () => {
+      try {
+        const msgs = await chatListMessages(activeId);
+        if (!alive) return;
+        setMessages(msgs as any);
+      } catch (e: any) {
+        if (e instanceof ApiError && e.status === 401) {
+          router.push('/auth');
+          return;
+        }
+        console.error(e);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [activeId, router]);
+
+  // autoscroll
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length]);
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, isSending]);
 
-  const activeSession = useMemo(() => sessions.find((s) => s.id === activeId) ?? null, [sessions, activeId]);
+  const createNewSession = async () => {
+    try {
+      const created = await chatCreateSession('แชทใหม่');
+      setSessions((prev) => [created as any, ...prev]);
+      setActiveId(created.id);
 
-  function createNewSession() {
-    const now = new Date().toISOString();
-    const s: ChatSession = {
-      id: newId("session"),
-      title: "แชทใหม่",
-      createdAt: now,
-      updatedAt: now,
-    };
-    const next = [s, ...sessions];
-    setSessions(next);
-    lsSaveSessions(next);
-
-    setActiveId(s.id);
-    setMessages([]);
-    lsSaveMessages(s.id, []);
-  }
-
-  function selectSession(id: string) {
-    setActiveId(id);
-  }
-
-  function updateSessionTitleAndTime(sessionId: string, maybeTitle?: string) {
-    const now = new Date().toISOString();
-    const next = sessions.map((s) =>
-      s.id === sessionId
-        ? {
-            ...s,
-            title: maybeTitle ?? s.title,
-            updatedAt: now,
-          }
-        : s
-    );
-    setSessions(next);
-    lsSaveSessions(next);
-  }
-
-  function onSend() {
-    const text = input.trim();
-    if (!text || !activeId) return;
-
-    const now = new Date().toISOString();
-
-    const userMsg: ChatMessage = {
-      id: newId("m"),
-      role: "user",
-      content: text,
-      createdAt: now,
-    };
-
-    const nextMsgs = [...messages, userMsg];
-    setMessages(nextMsgs);
-    lsSaveMessages(activeId, nextMsgs);
-
-    // ตั้งชื่อห้องจากข้อความแรก (ถ้าห้องยังเป็น "แชทใหม่")
-    if (activeSession?.title === "แชทใหม่") {
-      updateSessionTitleAndTime(activeId, buildTitleFromFirstUserMsg(text));
-    } else {
-      updateSessionTitleAndTime(activeId);
+      const msgs = await chatListMessages(created.id);
+      setMessages(msgs as any);
+    } catch (e: any) {
+      if (e instanceof ApiError && e.status === 401) {
+        router.push('/auth');
+        return;
+      }
+      console.error(e);
     }
+  };
 
-    setInput("");
+  const selectSession = (id: string) => setActiveId(id);
 
-    // ====== MOCK AI RESPONSE (ไว้แทน backend) ======
-    // ภายหลังจะเปลี่ยนเป็นเรียก POST /chat/sessions/:id/messages
-    window.setTimeout(() => {
-      const bot: ChatMessage = {
-        id: newId("m"),
-        role: "assistant",
-        content: "ตอนนี้เป็นโหมดเตรียมหน้าแชทนะ 😊 เดี๋ยวพอหลังบ้านพร้อม เราจะให้ AI ตอบจริงจาก API ได้เลย",
-        createdAt: new Date().toISOString(),
-      };
-      const after = [...lsGetMessages(activeId), bot];
-      setMessages(after);
-      lsSaveMessages(activeId, after);
-      updateSessionTitleAndTime(activeId);
-    }, 350);
-  }
+  const send = async () => {
+    const text = input.trim();
+    if (!text || !activeId || isSending) return;
+
+    setInput('');
+    setIsSending(true);
+
+    // optimistic UI
+    const optimisticUser: ChatMessage = {
+      id: newId(),
+      role: 'user',
+      content: text,
+      createdAt: new Date().toISOString(),
+    } as any;
+    setMessages((prev) => [...prev, optimisticUser]);
+
+    try {
+      const res = await chatSendMessage(activeId, text, 3);
+
+      setMessages((prev) => {
+        const trimmed = prev.slice(0, -1);
+        return [...trimmed, res.userMessage as any, res.assistantMessage as any];
+      });
+
+      const sess = await chatListSessions();
+      setSessions(sess as any);
+    } catch (e: any) {
+      let msg = `ขอโทษนะ ตอนนี้ส่งไม่สำเร็จ (${e?.message ?? 'error'})`;
+      if (e instanceof ApiError && e.status === 401) msg = 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่';
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: newId(),
+          role: 'assistant',
+          content: msg,
+          createdAt: new Date().toISOString(),
+        } as any,
+      ]);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
+  };
+
+  const hasRealMessages = !isBooting && messages.length > 0;
 
   return (
-    <main className="min-h-screen pt-24 px-4 sm:px-6 pb-10">
-      <section className="mx-auto max-w-6xl">
-        {/* shell */}
-        <div className="rounded-3xl overflow-hidden border border-white/40 shadow-xl bg-white/30 backdrop-blur-md">
-          {/* top bar */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-white/40">
+    <div className="w-full">
+      {/* Outer card (เหมือนรูป 2) */}
+      <div className="w-full max-w-[1200px] mx-auto">
+        <div className="rounded-[28px] overflow-hidden shadow-xl ring-1 ring-white/25 bg-white/10 backdrop-blur-md">
+          <div className="h-[700px] grid grid-cols-[320px_1fr]">
+            {/* LEFT SIDEBAR */}
+            <aside className="relative p-6">
+              <div className="text-white/90 font-semibold text-2xl">History</div>
 
-            <button
-              type="button"
-              onClick={() => router.push("/")}
-              className="h-9 w-9 rounded-xl bg-white/30 border border-white/40 hover:bg-white/45 transition flex items-center justify-center"
-              aria-label="Home"
-              title="Home"
-            >
-              <span className="text-xl">🏠</span>
-            </button>
-          </div>
-
-          {/* content */}
-          <div className="grid grid-cols-12 min-h-[560px]">
-            {/* left sidebar */}
-            <aside className="col-span-12 sm:col-span-4 lg:col-span-3 border-r border-white/40 bg-white/15">
-              <div className="p-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-white font-bold text-lg drop-shadow">History</h2>
-                  <button
-                    type="button"
-                    onClick={createNewSession}
-                    className="rounded-xl bg-white/25 border border-white/40 px-3 py-1.5 text-white text-sm font-semibold hover:bg-white/35 transition"
-                  >
-                    + New
-                  </button>
-                </div>
-
-                <div className="mt-4 flex flex-col gap-2">
-                  {sessions
-                    .slice()
-                    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-                    .map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => selectSession(s.id)}
-                        className={[
-                          "text-left w-full rounded-2xl px-4 py-3 border transition",
-                          s.id === activeId
-                            ? "bg-white/40 border-white/60 shadow"
-                            : "bg-white/15 border-white/30 hover:bg-white/25",
-                        ].join(" ")}
-                      >
-                        <p className="text-white font-semibold truncate">{s.title}</p>
-                        <p className="text-white/70 text-xs mt-1">{formatTime(s.updatedAt)}</p>
-                      </button>
-                    ))}
-                </div>
+              <div className="mt-6 space-y-3">
+                {sessions.map((s) => {
+                  const isActive = s.id === activeId;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => selectSession(s.id)}
+                      className={[
+                        'w-full text-left transition',
+                        'px-0 py-2',
+                        isActive ? 'text-white/95' : 'text-white/70 hover:text-white/90',
+                      ].join(' ')}
+                    >
+                      <div className="font-medium truncate underline underline-offset-4 decoration-white/35">
+                        {s.title}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
+
+              <button
+                type="button"
+                onClick={() => void createNewSession()}
+                className="mt-6 text-white/80 hover:text-white text-sm underline underline-offset-4 decoration-white/35"
+                disabled={isBooting}
+              >
+                + New
+              </button>
+
+              {/* vertical divider */}
+              <div className="absolute top-0 right-0 h-full w-px bg-white/30" />
             </aside>
 
-            {/* right chat */}
-            <section className="col-span-12 sm:col-span-8 lg:col-span-9 relative">
-              {/* message list */}
-              <div ref={listRef} className="h-[520px] overflow-auto px-6 py-6">
-                {messages.length === 0 ? (
-                  <div className="h-full flex items-center justify-center">
-                    <div className="text-center text-white/80">
-                      <div className="text-2xl mb-2">✨</div>
-                      <p className="drop-shadow">สนใจเรียนวิชาแบบไหน?</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {messages.map((m) => (
-                      <div
-                        key={m.id}
-                        className={[
-                          "max-w-[80%] rounded-2xl px-4 py-3 border shadow-sm",
-                          m.role === "user"
-                            ? "ml-auto bg-white/85 border-white/70"
-                            : "mr-auto bg-white/55 border-white/50",
-                        ].join(" ")}
-                      >
-                        <p className="text-sm text-gray-800 whitespace-pre-line">{m.content}</p>
-                        <p className="text-[11px] text-gray-500 mt-2">{formatTime(m.createdAt)}</p>
+            {/* RIGHT CHAT */}
+            <section className="relative">
+              {/* top bar (เส้นแนวนอน + home icon) */}
+              <div className="h-[86px] flex items-center justify-between px-8">
+                <div className="text-white/0 select-none">.</div>
+                <button
+                  type="button"
+                  onClick={() => router.push('/')}
+                  className="w-11 h-11 rounded-2xl bg-white/15 hover:bg-white/25 transition grid place-items-center"
+                  title="Home"
+                >
+                  <span className="text-white text-xl">🏠</span>
+                </button>
+              </div>
+              <div className="h-px bg-white/30" />
+
+              {/* message area */}
+              <div className="absolute inset-x-0 top-[87px] bottom-[88px] px-10 py-8">
+                <div
+                  ref={listRef}
+                  className="h-full overflow-auto pr-2"
+                >
+                  {/* empty state like รูป 2 */}
+                  {!hasRealMessages ? (
+                    <div className="h-full grid place-items-center text-center">
+                      <div className="text-white/80">
+                        <div className="text-2xl mb-3">✨</div>
+                        <div className="text-xl font-medium">สนใจเรียนวิชาแบบไหน?</div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {messages.map((m) => {
+                        const isUser = m.role === 'user';
+                        return (
+                          <div
+                            key={m.id}
+                            className={[
+                              'max-w-[70%] rounded-3xl px-5 py-3 whitespace-pre-wrap',
+                              isUser
+                                ? 'ml-auto bg-white/90 text-black'
+                                : 'mr-auto bg-white/70 text-black',
+                            ].join(' ')}
+                          >
+                            <div className="text-sm">{m.content}</div>
+                            <div className="text-[11px] opacity-60 mt-1">{formatTime(m.createdAt)}</div>
+                          </div>
+                        );
+                      })}
+
+                      {isSending && (
+                        <div className="mr-auto max-w-[70%] rounded-3xl px-5 py-3 bg-white/50 text-black">
+                          <div className="text-sm opacity-80">AI กำลังตอบ...</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* input */}
-              <div className="absolute left-0 right-0 bottom-0 p-6 bg-gradient-to-t from-white/35 to-transparent">
-                <div className="flex items-center gap-3 rounded-2xl bg-white/85 border border-white/70 shadow px-4 py-3">
+              {/* input bar inside card */}
+              <div className="absolute inset-x-0 bottom-0 h-[88px] px-10 flex items-center">
+                <div className="w-full bg-white/70 rounded-2xl px-4 py-3 flex items-center gap-4">
                   <input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") onSend();
-                    }}
+                    onKeyDown={onKeyDown}
                     placeholder="ASK..."
-                    className="flex-1 bg-transparent outline-none text-gray-800 placeholder:text-gray-400"
+                    className="flex-1 bg-transparent outline-none text-black placeholder:text-black/40"
+                    disabled={isBooting || !activeId}
                   />
                   <button
                     type="button"
-                    onClick={onSend}
-                    className="h-10 w-10 rounded-xl bg-black/5 hover:bg-black/10 transition flex items-center justify-center"
-                    aria-label="Send"
+                    onClick={() => void send()}
+                    disabled={isSending || isBooting || !input.trim() || !activeId}
+                    className="w-11 h-11 rounded-xl bg-white/70 hover:bg-white disabled:opacity-60 grid place-items-center"
+                    title="Send"
                   >
-                    <span className="text-xl">➤</span>
+                    <span className="text-black/70 text-xl">➤</span>
                   </button>
                 </div>
               </div>
             </section>
           </div>
         </div>
-      </section>
-    </main>
+      </div>
+    </div>
   );
 }
