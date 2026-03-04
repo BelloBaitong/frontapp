@@ -1,26 +1,59 @@
-// src/app/auth/callback/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setToken, consumeReturnTo } from "@/lib/auth";
+import { userProfileGetMe } from "@/lib/api"; // ✅ เพิ่ม
 
 export default function AuthCallbackPage() {
   const router = useRouter();
   const sp = useSearchParams();
 
   useEffect(() => {
-    const token = sp.get("token");
-    if (!token) {
-      router.replace("/");
-      return;
-    }
+    let cancelled = false;
 
-    setToken(token);
+    const run = async () => {
+      const token = sp.get("token");
+      if (!token) {
+        router.replace("/");
+        return;
+      }
 
-    // ✅ กลับไปหน้าที่ตั้งใจไว้ก่อน login (ถ้ามี)
-    const back = consumeReturnTo();
-    router.replace(back || "/");
+      setToken(token);
+
+      // ✅ เช็ค profile ใน DB ก่อน
+      try {
+        const p = await userProfileGetMe();
+
+        const ok =
+          !!p?.studyYear &&
+          Array.isArray(p?.interests) &&
+          p!.interests.length >= 3 &&
+          Array.isArray(p?.careerGoals) &&
+          p!.careerGoals.length >= 1;
+
+        if (cancelled) return;
+
+        if (!ok) {
+          router.replace("/onboarding");
+          return;
+        }
+
+        // ✅ กลับไปหน้าที่ตั้งใจไว้ก่อน login (ถ้ามี)
+        const back = consumeReturnTo();
+        router.replace(back || "/");
+      } catch {
+        if (cancelled) return;
+        // ถ้าเรียก API ไม่ได้/มีปัญหา ให้ไปหน้า onboarding ไว้ก่อน (กันหลุด flow)
+        router.replace("/onboarding");
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router, sp]);
 
   return (

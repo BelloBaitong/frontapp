@@ -8,6 +8,8 @@ import CoursesSection from "./CoursesSection";
 import CourseDetailSection from "./CourseDetailSection";
 import CourseSearchBox from "./CourseSearchBox";
 import ChatShell from "./chat/ChatShell";
+import ProfileGate from "./ProfileGate";
+import ProfileOnboardingForm from "./ProfileOnboardingForm";
 
 export { 
     HomeSection,
@@ -19,7 +21,9 @@ export {
     CoursesSection,
     CourseDetailSection,
     CourseSearchBox,
-    ChatShell
+    ChatShell,
+    ProfileGate,
+    ProfileOnboardingForm,
     
 
 };

@@ -150,3 +150,37 @@ export function chatSendMessage(sessionId: string, content: string, topK = 3) {
     auth: true,
   });
 }
+
+// ===== User Profile API =====
+export type UserProfileDto = {
+  id: number;
+  userId: number;
+  studyYear: number | null;
+  interests: string[];
+  careerGoals: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UpsertUserProfilePayload = {
+  studyYear?: number;
+  interests?: string[];
+  careerGoals?: string[];
+};
+
+// GET โปรไฟล์ของตัวเอง
+export function userProfileGetMe() {
+  return apiFetch<UserProfileDto>("/user/profile/me", {
+    method: "GET",
+    auth: true,
+  });
+}
+
+// upsert โปรไฟล์ของตัวเอง
+export function userProfileUpsertMe(payload: UpsertUserProfilePayload) {
+  return apiFetch<UserProfileDto>("/user/profile/me", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+    auth: true,
+  });
+}
