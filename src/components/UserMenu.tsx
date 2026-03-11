@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clearToken, getToken, parseJwt } from "@/lib/auth";
 
-
 type JwtUser = {
   sub?: string | number;
   email?: string;
@@ -14,20 +13,18 @@ type JwtUser = {
 export default function UserMenu() {
   const [open, setOpen] = useState(false);
   const [token, setTokenState] = useState<string | null>(null);
+  const [profile, setProfile] = useState<any>(null); // เพิ่ม state สำหรับโปรไฟล์
   const triggerRef = useRef<HTMLDivElement | null>(null);
   const [imgError, setImgError] = useState(false);
 
-
-
   useEffect(() => {
-    // init
+    // init token state
     setTokenState(getToken());
 
-    // sync ระหว่าง tab/หรือหลัง callback
+    // sync token between tabs after login
     const onStorage = () => setTokenState(getToken());
     window.addEventListener("storage", onStorage);
 
-    // เผื่อ token เปลี่ยนใน tab เดียวกัน (หลัง login) ให้ refresh state
     const t = window.setInterval(() => setTokenState(getToken()), 500);
     return () => {
       window.removeEventListener("storage", onStorage);
@@ -35,24 +32,46 @@ export default function UserMenu() {
     };
   }, []);
 
+  // Get user info from JWT token
   const user = useMemo(() => {
     if (!token) return null;
     return parseJwt<JwtUser>(token);
   }, [token]);
 
-    useEffect(() => {
+  useEffect(() => {
+    if (token) {
+      // Fetch user profile from backend
+      const fetchProfile = async () => {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/user/profile/me`, {          
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+          },
+        });
+        const data = await response.json();
+        setProfile(data); // Save profile data
+      };
+      fetchProfile();
+    }
+  }, [token]);
+
+  const handleEditClick = () => {
+    // ใช้ window.location.href เพื่อไปที่หน้า ProfileOnboardingForm
+    window.location.href = "/onboarding";
+  };
+
+  useEffect(() => {
     setImgError(false);
   }, [user?.picture]);
-  
+
   if (!token) return null;
 
   const displayName = user?.name || user?.email || "Student";
   const hasPicture = !!user?.picture && !imgError;
 
-
   return (
     <div className="relative">
-    <div
+      <div
         ref={triggerRef}
         role="button"
         tabIndex={0}
@@ -81,7 +100,6 @@ export default function UserMenu() {
         )}
       </div>
 
-
       {open && (
         <>
           <div className="absolute right-0 mt-3 w-72 rounded-2xl bg-white/95 shadow-xl border border-black/5 overflow-hidden z-50">
@@ -93,7 +111,34 @@ export default function UserMenu() {
               )}
             </div>
 
+            {/* แสดงข้อมูลโปรไฟล์ที่ดึงมา */}
+{/* แสดงข้อมูลโปรไฟล์ที่ดึงมา */}
+            {profile && (
+              <div className="p-4">
+                <p className="text-sm text-gray-500">ความสนใจ:</p>
+                <p className="font-semibold text-gray-900">
+                  {profile?.interests?.join(", ") || "ไม่มีความสนใจที่เลือกไว้"}
+                </p>
+                
+                {/* เพิ่มส่วนที่แสดงอาชีพที่สนใจในอนาคต */}
+                <p className="text-sm text-gray-500 mt-2">อาชีพที่สนใจ:</p>
+                <p className="font-semibold text-gray-900">
+                  {profile?.careerGoals?.join(", ") || "ไม่มีอาชีพที่สนใจ"}
+                </p>
+              </div>
+            )}
+
+            
+
             <div className="border-t border-black/5 p-2">
+              <button
+                type="button"
+                onClick={handleEditClick} // เมื่อคลิกจะไปหน้า ProfileOnboardingForm
+                className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-black/5 transition"
+              >
+                แก้ไขข้อมูลโปรไฟล์
+              </button>
+              
               <button
                 type="button"
                 onClick={() => {
