@@ -184,3 +184,14 @@ export function userProfileUpsertMe(payload: UpsertUserProfilePayload) {
     auth: true,
   });
 }
+
+export function getRecommendedCourses({ userId, limit = 10 }: { userId: number, limit?: number }) {
+  return apiFetch<{ ok: boolean; count: number; courses: any[] }>(
+    "/recommendations/courses",
+    {
+      method: "POST",
+      body: JSON.stringify({ userId: userId, limit: limit }), // ตรวจสอบว่า userId ถูกส่งใน body ของคำขอ
+      auth: true, // ✅ ส่ง Bearer token
+    }
+  );
+}

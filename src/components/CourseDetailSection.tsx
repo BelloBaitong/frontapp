@@ -3,6 +3,7 @@
 import type { Course } from "@/types/course";
 import type { Review } from "@/types/review";
 import WriteReviewButton from "@/components/WriteReviewButton";
+import { useEffect, useState } from "react";
 
 
 
@@ -39,6 +40,13 @@ function formatDateTime(iso: string) {
   return d.toLocaleString();
 }
 
+type AiSummaryResponse = {
+  ok?: boolean;
+  courseCode?: string;
+  status: "OK" | "INSUFFICIENT_DATA" | string;
+  summary: string | null;
+};
+
 export default function CourseDetailSection({
   course,
   reviews,
@@ -52,6 +60,62 @@ export default function CourseDetailSection({
   const titleEn = course.courseNameEn ?? "-";
   const titleTh = course.courseNameTh ?? "-";
   const categoryTh = formatCategoryTh(course.category);
+
+  
+
+  const [ai, setAi] = useState<AiSummaryResponse | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAiSummary() {
+      // requirement: ถ้าไม่มีรีวิว -> กล่องว่าง/ข้อมูลไม่พอ (ไม่ต้องยิง API ก็ได้)
+      if (reviewCount === 0) {
+        setAi({ status: "INSUFFICIENT_DATA", summary: null });
+        return;
+      }
+
+      setAiLoading(true);
+      setAiError(null);
+
+      try {
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+        const url = `${base}/course/${course.courseCode}/ai-summary`;
+        console.log("AI summary url:", url);
+
+        const res = await fetch(url, {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || `Request failed: ${res.status}`);
+        }
+
+        const data = (await res.json()) as AiSummaryResponse;
+
+        if (cancelled) return;
+        setAi(data);
+      } catch (e: any) {
+        if (cancelled) return;
+        setAiError(e?.message ?? "โหลดสรุปจาก AI ไม่สำเร็จ");
+        // fallback: ให้กล่องไม่พัง
+        setAi({ status: "INSUFFICIENT_DATA", summary: null });
+      } finally {
+        if (!cancelled) setAiLoading(false);
+      }
+    }
+
+    loadAiSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [course.courseCode, reviewCount]);
+
   
 
   return (
@@ -102,6 +166,32 @@ export default function CourseDetailSection({
                     </p>
                     <StarRow rating={avgRating} />
                   </div>
+                </div>
+              </div>
+
+                 {/* สรุปจาก AI */}
+              <div className="rounded-2xl bg-white/70 border border-black/5 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-gray-600">สรุปจาก AI</p>
+                  {aiLoading ? (
+                    <span className="text-xs text-gray-500">กำลังสรุป...</span>
+                  ) : null}
+                </div>
+
+                <div className="mt-2">
+                  {ai?.status === "OK" && ai.summary ? (
+                    <p className="text-gray-800 leading-relaxed whitespace-pre-line">
+                      {ai.summary}
+                    </p>
+                  ) : (
+                    <p className="text-gray-500 leading-relaxed">
+                      ข้อมูลไม่เพียงพอสำหรับการสรุปข้อมูล
+                    </p>
+                  )}
+
+                  {aiError ? (
+                    <p className="mt-2 text-xs text-red-500">{aiError}</p>
+                  ) : null}
                 </div>
               </div>
 

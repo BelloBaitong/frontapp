@@ -34,6 +34,10 @@ export default function AuthCallbackPage() {
 
         if (cancelled) return;
 
+        if (p?.userId) {
+          localStorage.setItem("userId", p.userId.toString()); // เก็บ userId ใน localStorage
+        }
+
         if (!ok) {
           router.replace("/onboarding");
           return;

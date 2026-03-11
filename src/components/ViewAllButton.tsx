@@ -7,7 +7,7 @@ type ViewAllButtonProps = {
 
 export default function ViewAllButton({
   href,
-  label = "ดูทั้งหมด",
+  label = "รายวิชาทั้งหมด",
 }: ViewAllButtonProps) {
   return (
     <Link
@@ -18,7 +18,7 @@ export default function ViewAllButton({
         rounded-full
         bg-white/100 backdrop-blur-md
         ring-1 ring-white/100
-        text-white font-semibold
+        text-gray-800 font-semibold
         shadow-md hover:shadow-lg
         transition
       "

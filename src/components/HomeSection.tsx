@@ -6,7 +6,8 @@ import Link from "next/link";
 import ViewAllButton from "@/components/ViewAllButton";
 import type { PopularCourse } from "@/types/popularcourse";
 import type { Review } from "@/types/review";
-
+import { getRecommendedCourses } from "@/lib/api";
+import { useEffect, useState } from "react";
 
 const HomeSection = ({ courses, popularCourses,reviews }:
    { courses: Course[]; popularCourses: PopularCourse[]; reviews: Review[]
@@ -18,6 +19,46 @@ const HomeSection = ({ courses, popularCourses,reviews }:
     rating: 5.0, // ตอนนี้หลังบ้านยังไม่มี rating -> ใส่คงที่ไปก่อน
     imageSrc: c.imageUrl ?? "", 
 }));
+const [recommendedCourses, setRecommendedCourses] = useState<any[]>([]);
+
+useEffect(() => {
+  async function loadRecommendations() {
+    try {
+      // ดึง userId จาก localStorage
+      const userId = localStorage.getItem("userId");
+
+      // ตรวจสอบว่า userId มีค่าไหม
+      if (!userId) {
+        throw new Error("User ID is required");
+      }
+
+      // แปลง userId เป็น number และตรวจสอบว่าแปลงสำเร็จ
+      const userIdNum = Number(userId);
+      if (isNaN(userIdNum)) {
+        throw new Error("Invalid User ID");
+      }
+
+      // ส่ง userId ไปในคำขอ API โดยแปลงเป็น number
+      const data: any = await getRecommendedCourses({ userId: userIdNum });
+      console.log("recommendation response:", data);
+      console.log("courses length:", data?.courses?.length);
+
+      const mapped = (data?.courses ?? []).map((c: any) => ({
+        code: c.courseCode,
+        titleEn: c.courseNameEn ?? c.courseName ?? "_",
+        titleTh: c.courseNameTh ?? "_",
+        rating: c.avgRating ?? 5,
+        imageSrc: c.imageUrl ?? ""
+      }));
+
+      setRecommendedCourses(mapped);
+    } catch (err) {
+      console.error("recommendation error", err);
+    }
+  }
+
+  loadRecommendations();
+}, []);
 
   const popularCards = (popularCourses?.length ? popularCourses : []).map((c: any) => ({
     code: c.courseCode ?? c.code,
@@ -63,11 +104,13 @@ const HomeSection = ({ courses, popularCourses,reviews }:
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-            {popularCards.map((course) => (
-              <Link key={course.code} href={`/courses/${course.code}`} className="block">
-                <CourseCard {...course} />
-              </Link>
-            ))}
+           {popularCards.map((course) => (
+                  <div key={course.code}>
+                    <Link href={`/courses/${course.code}`}>
+                      <CourseCard {...course} />
+                    </Link>
+                  </div>
+                ))}         
           </div>
         </section>
 
@@ -75,19 +118,18 @@ const HomeSection = ({ courses, popularCourses,reviews }:
         <section className="flex flex-col gap-4">
            <div className="flex items-center justify-between">
               <h2 className="text-lg sm:text-xl font-extrabold text-white drop-shadow-sm">
-                รายวิชา
+                รายวิชาสำหรับคุณ
               </h2>
 
               <ViewAllButton href="/course" />
            </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-                  {dbCourses.slice(0, 8).map((course) => (
-                    <Link key={course.code} href={`/courses/${course.code}`} className="block">
-                        <CourseCard {...course} />
-                    </Link>
-                ))}
-
+           {(recommendedCourses.length ? recommendedCourses : dbCourses.slice(0,8)).map((course) => (
+                <div key={course.code}>
+                <CourseCard {...course} />
+                </div>
+              ))}
            </div>
         </section>
 
@@ -99,10 +141,10 @@ const HomeSection = ({ courses, popularCourses,reviews }:
         </h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-          {reviewCards.map((review) => (
-            <ReviewCard key={review.courseCode + review.userName} {...review} />
-          ))}
-        </div>
+              {reviewCards.map((review, index) => (
+                <ReviewCard key={`${review.courseCode}-${index}`} {...review} />
+              ))}        
+            </div>
       </section>
       </section>
     </main>
