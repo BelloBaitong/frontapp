@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { getToken, setReturnTo } from "@/lib/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -9,88 +9,187 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 export default function NewReviewPage() {
   const router = useRouter();
   const params = useParams<{ courseCode: string }>();
-  const courseCode = params.courseCode;
+  const searchParams = useSearchParams();
 
+  const courseCode = params.courseCode;
   const token = useMemo(() => getToken(), []);
+
+  const mode = searchParams.get("mode");
+  const reviewId = searchParams.get("reviewId");
+  const isEditMode = mode === "edit" && !!reviewId;
+
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [loadingReview, setLoadingReview] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // ✅ กันคนไม่ login
   useEffect(() => {
     if (!token) {
-      setReturnTo(`/course/${courseCode}/review/new`);
+      setReturnTo(`/course/${courseCode}/review`);
       window.location.href = `${API_BASE}/auth/google`;
     }
   }, [token, courseCode]);
 
- async function fetchCourseIdByCode(code: string, token: string) {
-  const res = await fetch(`${API_BASE}/course/code/${code}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+  useEffect(() => {
+    if (!token || !isEditMode || !reviewId) return;
 
-  if (!res.ok) {
-    throw new Error(`Cannot find course by code (${code})`);
-  }
+    async function fetchReviewDetail() {
+      try {
+        setLoadingReview(true);
+        setErr(null);
 
-  const course = await res.json();
-  return course.id as number;
-}
+        const res = await fetch(`${API_BASE}/review/${reviewId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        });
 
-async function submit() {
-  setErr("");
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          throw new Error(t || "โหลดรีวิวไม่สำเร็จ");
+        }
 
-  const token = getToken();
-  if (!token) {
-    setErr("กรุณาเข้าสู่ระบบก่อน");
-    return;
-  }
+        const data = await res.json();
+        setRating(data.rating ?? 5);
+        setComment(data.comment ?? "");
+        setIsAnonymous(Boolean(data.isAnonymous));
+      } catch (e: any) {
+        setErr(e?.message || "โหลดข้อมูลรีวิวไม่สำเร็จ");
+      } finally {
+        setLoadingReview(false);
+      }
+    }
 
-  try {
-    // 1) แปลง courseCode -> courseId ก่อน
-    const courseId = await fetchCourseIdByCode(courseCode, token);
+    fetchReviewDetail();
+  }, [token, isEditMode, reviewId]);
 
-    // 2) ส่งรีวิวไป endpoint ที่ backend มีอยู่จริง
-    const res = await fetch(`${API_BASE}/course/${courseId}/review`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        rating,
-        comment,
-        isAnonymous, // ตรงกับ CreateReviewDto ของคุณแล้ว
-      }),
+  async function fetchCourseIdByCode(code: string, token: string) {
+    const res = await fetch(`${API_BASE}/course/code/${code}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
     });
 
     if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      throw new Error(t || "submit failed");
+      throw new Error(`Cannot find course by code (${code})`);
     }
 
-    router.push(`/course/${courseCode}`); // หรือหน้าไหนที่คุณอยากให้กลับไป
-  } catch (e: any) {
-    setErr(e?.message || "บันทึกรีวิวไม่สำเร็จ (เช็ค backend/permission)");
+    const course = await res.json();
+    return course.id as number;
   }
-}
 
+  async function submit() {
+    setErr(null);
 
-  // ตอน redirect ไป login จะมองไม่ทัน แต่ให้เผื่อ UI
+    const token = getToken();
+    if (!token) {
+      setErr("กรุณาเข้าสู่ระบบก่อน");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      let res: Response;
+
+      if (isEditMode && reviewId) {
+        res = await fetch(`${API_BASE}/review/${reviewId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            rating,
+            comment,
+            isAnonymous,
+          }),
+        });
+      } else {
+        const courseId = await fetchCourseIdByCode(courseCode, token);
+
+        res = await fetch(`${API_BASE}/course/${courseId}/review`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            rating,
+            comment,
+            isAnonymous,
+          }),
+        });
+      }
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || (isEditMode ? "update failed" : "submit failed"));
+      }
+
+      router.push(`/course/${courseCode}`);
+    } catch (e: any) {
+      setErr(
+        e?.message ||
+          (isEditMode ? "บันทึกการแก้ไขไม่สำเร็จ" : "บันทึกรีวิวไม่สำเร็จ")
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDelete() {
+    const token = getToken();
+    if (!token || !reviewId) return;
+
+    const confirmed = window.confirm("ต้องการลบรีวิวนี้ใช่หรือไม่?");
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      setErr(null);
+
+      const res = await fetch(`${API_BASE}/review/${reviewId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || "delete failed");
+      }
+
+      router.push(`/course/${courseCode}`);
+    } catch (e: any) {
+      setErr(e?.message || "ลบรีวิวไม่สำเร็จ");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (!token) return <div className="pt-28 px-6">กำลังพาไปเข้าสู่ระบบ...</div>;
+  if (loadingReview) return <div className="pt-28 px-6">กำลังโหลดข้อมูลรีวิว...</div>;
 
   return (
     <main className="w-full min-h-screen pt-28 pb-16 px-4 sm:px-8">
       <section className="max-w-3xl mx-auto">
         <div className="rounded-3xl bg-white/85 shadow-md p-6">
-          <h1 className="text-2xl font-extrabold">เขียนรีวิวรายวิชา</h1>
+          <h1 className="text-2xl font-extrabold">
+            {isEditMode ? "แก้ไขรีวิวรายวิชา" : "เขียนรีวิวรายวิชา"}
+          </h1>
           <p className="text-sm text-gray-600 mt-1">รหัสวิชา: {courseCode}</p>
 
-          <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="mt-6 flex flex-col gap-5">
-            {/* rating */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}
+            className="mt-6 flex flex-col gap-5"
+          >
             <div>
               <p className="font-semibold mb-2">ให้คะแนน</p>
               <div className="flex items-center gap-2">
@@ -115,7 +214,6 @@ async function submit() {
               </div>
             </div>
 
-            {/* comment */}
             <div>
               <p className="font-semibold mb-2">ความคิดเห็น</p>
               <textarea
@@ -127,7 +225,6 @@ async function submit() {
               />
             </div>
 
-            {/* anonymous */}
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -139,13 +236,28 @@ async function submit() {
 
             {err && <p className="text-sm text-red-600">{err}</p>}
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 disabled={loading}
                 className="rounded-2xl px-5 py-3 font-bold bg-black text-white hover:bg-black/80 disabled:opacity-60"
               >
-                {loading ? "กำลังบันทึก..." : "ส่งรีวิว"}
+                {loading
+                  ? "กำลังบันทึก..."
+                  : isEditMode
+                  ? "บันทึกการแก้ไข"
+                  : "ส่งรีวิว"}
               </button>
+
+              {isEditMode && (
+                <button
+                  type="button"
+                  disabled={loading}
+                  className="rounded-2xl px-5 py-3 font-semibold bg-red-500 text-white hover:bg-red-600 disabled:opacity-60"
+                  onClick={handleDelete}
+                >
+                  ลบรีวิว
+                </button>
+              )}
 
               <button
                 type="button"

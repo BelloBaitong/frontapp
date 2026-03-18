@@ -3,7 +3,8 @@
 import type { Course } from "@/types/course";
 import type { Review } from "@/types/review";
 import WriteReviewButton from "@/components/WriteReviewButton";
-import { useEffect, useState } from "react";
+import { useEffect, useState , useMemo } from "react";
+import { getToken } from "@/lib/auth";
 
 
 
@@ -46,6 +47,21 @@ type AiSummaryResponse = {
   status: "OK" | "INSUFFICIENT_DATA" | string;
   summary: string | null;
 };
+function parseJwt(token: string | null): Record<string, any> | null {
+  if (!token) return null;
+
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = window.atob(normalized);
+
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
 
 export default function CourseDetailSection({
   course,
@@ -61,22 +77,39 @@ export default function CourseDetailSection({
   const titleTh = course.courseNameTh ?? "-";
   const categoryTh = formatCategoryTh(course.category);
 
-  
-
   const [ai, setAi] = useState<AiSummaryResponse | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  const token = useMemo(() => getToken(), []);
+  const me = useMemo(() => parseJwt(token), [token]);
+
+const myReview = useMemo(() => {
+  if (!me) return undefined;
+
+  return reviews.find((r: any) => {
+    const reviewUserId = r.userId ?? r.user?.id;
+    const reviewUserEmail = r.userEmail ?? r.user?.email;
+
+    return (
+      (me.id != null &&
+        reviewUserId != null &&
+        Number(reviewUserId) === Number(me.id)) ||
+      (me.email &&
+        reviewUserEmail &&
+        String(reviewUserEmail).toLowerCase() ===
+          String(me.email).toLowerCase()) ||
+      (me.sub != null &&
+        reviewUserId != null &&
+        String(reviewUserId) === String(me.sub))
+    );
+  });
+}, [reviews, me]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadAiSummary() {
-      // requirement: ถ้าไม่มีรีวิว -> กล่องว่าง/ข้อมูลไม่พอ (ไม่ต้องยิง API ก็ได้)
-      if (reviewCount === 0) {
-        setAi({ status: "INSUFFICIENT_DATA", summary: null });
-        return;
-      }
-
       setAiLoading(true);
       setAiError(null);
 
@@ -170,30 +203,38 @@ export default function CourseDetailSection({
               </div>
 
                  {/* สรุปจาก AI */}
-              <div className="rounded-2xl bg-white/70 border border-black/5 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-gray-600">สรุปจาก AI</p>
-                  {aiLoading ? (
-                    <span className="text-xs text-gray-500">กำลังสรุป...</span>
-                  ) : null}
-                </div>
+             <div className="rounded-2xl bg-white/70 border border-black/5 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-gray-600">สรุปจาก AI</p>
+                    {aiLoading ? (
+                      <span className="text-xs text-gray-500">✨</span>
+                    ) : null}
+                  </div>
 
-                <div className="mt-2">
-                  {ai?.status === "OK" && ai.summary ? (
-                    <p className="text-gray-800 leading-relaxed whitespace-pre-line">
-                      {ai.summary}
-                    </p>
-                  ) : (
-                    <p className="text-gray-500 leading-relaxed">
-                      ข้อมูลไม่เพียงพอสำหรับการสรุปข้อมูล
-                    </p>
-                  )}
+                  <div className="mt-2">
+                    {ai?.summary ? (
+                      <>
+                        <p className="text-gray-800 leading-relaxed whitespace-pre-line">
+                          {ai.summary}
+                        </p>
 
-                  {aiError ? (
-                    <p className="mt-2 text-xs text-red-500">{aiError}</p>
-                  ) : null}
+                        {ai.status === "NO_REVIEWS" && (
+                          <p className="mt-2 text-xs text-amber-600">
+                            วิชานี้ยังไม่มีรีวิวจากนักศึกษา สรุปนี้อ้างอิงจากคำอธิบายรายวิชาเป็นหลัก
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-gray-500 leading-relaxed">
+                        กำลังสรุปข้อมูล...
+                      </p>
+                    )}
+
+                    {aiError ? (
+                      <p className="mt-2 text-xs text-red-500">{aiError}</p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
 
                 {/* <div className="rounded-2xl bg-white/70 border border-black/5 p-4 ml-auto text-right">
                 <p className="text-sm text-gray-600">จำนวนรีวิว</p>
@@ -212,7 +253,11 @@ export default function CourseDetailSection({
             <h2 className="text-xl sm:text-2xl font-extrabold text-black">
               รีวิวรายวิชา
             </h2>
-            <WriteReviewButton courseCode={course.courseCode} />
+            <WriteReviewButton
+            courseCode={course.courseCode}
+            hasReviewed={!!myReview}
+            reviewId={myReview?.id}
+            />
           </div>
 
            <p className="text-sm text-gray-600">
