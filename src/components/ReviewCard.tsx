@@ -3,14 +3,12 @@
 import { useRouter } from "next/navigation";
 
 interface ReviewCardProps {
-  reviewId: number;
+  reviewId?: number;
   courseCode: string;
   courseName: string;
   userName: string;
   comment: string;
-  rating: number; // 1–5
-
-  // เพิ่ม
+  rating: number;
   isOwner?: boolean;
 }
 
@@ -26,6 +24,7 @@ export default function ReviewCard({
   const router = useRouter();
 
   const handleEdit = () => {
+    if (!reviewId) return;
     router.push(`/course/${courseCode}/review?mode=edit&reviewId=${reviewId}`);
   };
 
@@ -41,7 +40,7 @@ export default function ReviewCard({
           </p>
         </div>
 
-        {isOwner && (
+        {isOwner && reviewId && (
           <button
             type="button"
             onClick={handleEdit}

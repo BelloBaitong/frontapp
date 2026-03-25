@@ -16,7 +16,8 @@ const HomeSection = ({ courses, popularCourses,reviews }:
     code: c.courseCode,
     titleEn: c.courseNameEn ?? c.courseName ?? "-",      // ถ้ามี EN ให้ใช้ EN
     titleTh: c.courseNameTh ?? c.description ?? "-",     // ถ้ามี TH ให้ใช้ TH
-    rating: 5.0, // ตอนนี้หลังบ้านยังไม่มี rating -> ใส่คงที่ไปก่อน
+    rating: Number(c.avgRating ?? 0) || 0,
+    reviewCount: Number(c.reviewCount ?? 0) || 0,
     imageSrc: c.imageUrl ?? "", 
 }));
 const [recommendedCourses, setRecommendedCourses] = useState<any[]>([]);
@@ -39,7 +40,7 @@ useEffect(() => {
       }
 
       // ส่ง userId ไปในคำขอ API โดยแปลงเป็น number
-      const data: any = await getRecommendedCourses({ userId: userIdNum });
+      const data: any = await getRecommendedCourses({ userId : userIdNum });
       console.log("recommendation response:", data);
       console.log("courses length:", data?.courses?.length);
 
@@ -47,7 +48,8 @@ useEffect(() => {
         code: c.courseCode,
         titleEn: c.courseNameEn ?? c.courseName ?? "_",
         titleTh: c.courseNameTh ?? "_",
-        rating: c.avgRating ?? 5,
+        rating: Number(c.avgRating ?? 0) || 0,
+        reviewCount: Number(c.reviewCount ?? 0) || 0,
         imageSrc: c.imageUrl ?? ""
       }));
 
@@ -65,6 +67,7 @@ useEffect(() => {
     titleEn: c.courseNameEn ?? c.titleEn ?? "-",
     titleTh: c.courseNameTh ?? c.titleTh ?? "-",
     rating: Number(c.avgRating ?? c.rating ?? 0) || 0,
+    reviewCount: Number(c.reviewCount ?? 0) || 0,
     imageSrc: (c.imageUrl && c.imageUrl.trim().length > 0) ? c.imageUrl : "",
   }));
 
@@ -135,17 +138,21 @@ useEffect(() => {
 
         {/* รีวิวจากนักศึกษา */}
          {/* รีวิวรายวิชา */}
-      <section className="flex flex-col gap-4 mt-8">
-        <h2 className="text-lg sm:text-xl font-extrabold text-[#ffffff] drop-shadow-sm">
-          รีวิวรายวิชา
-        </h2>
+        <section className="flex flex-col gap-4 mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg sm:text-xl font-extrabold text-[#ffffff] drop-shadow-sm">
+              รีวิวรายวิชา
+            </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-              {reviewCards.map((review, index) => (
-                <ReviewCard key={`${review.courseCode}-${index}`} {...review} />
-              ))}        
-            </div>
-      </section>
+            <ViewAllButton href="/reviews" label="รีวิวทั้งหมด" />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+            {reviewCards.slice(0, 8).map((review, index) => (
+              <ReviewCard key={`${review.courseCode}-${index}`} {...review} />
+            ))}
+          </div>
+        </section>
       </section>
     </main>
   );

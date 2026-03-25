@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { Course } from "@/types/course";
 import CourseCard from "@/components/CourseCard";
 
-type SortKey = "relevance" | "latest" | "popular" | "az" | "za";
+type SortKey = "popular" | "az" | "za";
 
 export default function CoursesSection({ courses }: { courses: Course[] }) {
   const [q, setQ] = useState("");
@@ -12,14 +12,16 @@ export default function CoursesSection({ courses }: { courses: Course[] }) {
 
   // แปลงข้อมูลจาก backend -> props ของ CourseCard (เหมือนใน HomeSection)
   const mapped = useMemo(() => {
-    const normalized = courses.map((c) => ({
-      code: c.courseCode,
-      titleEn: c.courseNameEn ?? c.courseName ?? "-",
-      titleTh: c.courseNameTh ?? c.description ?? "-",
-      rating: 5.0,
-      imageSrc: c.imageUrl ?? "", // ถ้าไม่มีรูปจะเป็น "" แล้ว CourseCard จะโชว์ชื่อแทน
-      createdAt: c.createdAt ? new Date(c.createdAt) : null,
-    }));
+      const normalized = courses.map((c) => ({
+        
+        code: c.courseCode,
+        titleEn: c.courseNameEn ?? c.courseName ?? "-",
+        titleTh: c.courseNameTh ?? c.description ?? "-",
+        rating: Number(c.avgRating ?? 0),
+        reviewCount: Number(c.reviewCount ?? 0),
+        imageSrc: c.imageUrl ?? "",
+        createdAt: c.createdAt ? new Date(c.createdAt) : null,
+      }));
 
     // search
     const filtered = normalized.filter((x) => {
@@ -27,20 +29,29 @@ export default function CoursesSection({ courses }: { courses: Course[] }) {
       return hay.includes(q.trim().toLowerCase());
     });
 
-    // sort
-    const sorted = [...filtered].sort((a, b) => {
-      if (sort === "az") return a.titleEn.localeCompare(b.titleEn);
-      if (sort === "za") return b.titleEn.localeCompare(a.titleEn);
+const sorted = [...filtered].sort((a, b) => {
+  if (sort === "az") return a.titleEn.localeCompare(b.titleEn);
 
-      if (sort === "latest") {
-        const at = a.createdAt?.getTime() ?? 0;
-        const bt = b.createdAt?.getTime() ?? 0;
-        return bt - at;
-      }
+  if (sort === "za") return b.titleEn.localeCompare(a.titleEn);
 
-      // popular / relevance ตอนนี้ยังไม่มีข้อมูลจริง -> ให้คงลำดับเดิม
-      return 0;
-    });
+  if (sort === "popular") {
+    const reviewA = a.reviewCount ?? 0;
+    const reviewB = b.reviewCount ?? 0;
+
+    const ratingA = a.rating ?? 0;
+    const ratingB = b.rating ?? 0;
+
+    // 1. เรียงตามจำนวนรีวิวก่อน (มาก → น้อย)
+    if (reviewB !== reviewA) {
+      return reviewB - reviewA;
+    }
+
+    // 2. ถ้ารีวิวเท่ากัน → เรียงตาม rating (มาก → น้อย)
+    return ratingB - ratingA;
+  }
+
+  return 0;
+});
 
     return sorted;
   }, [courses, q, sort]);
@@ -61,8 +72,6 @@ export default function CoursesSection({ courses }: { courses: Course[] }) {
               onChange={(e) => setSort(e.target.value as SortKey)}
               className="appearance-none bg-white/90 rounded-2xl shadow-md px-4 py-2 pr-10 text-sm font-semibold text-[#6B6B6B] outline-none"
             >
-              <option value="relevance">ความเกี่ยวข้อง</option>
-              <option value="latest">ล่าสุด</option>
               <option value="popular">ยอดนิยม</option>
               <option value="az">A–Z</option>
               <option value="za">Z–A</option>

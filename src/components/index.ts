@@ -10,6 +10,7 @@ import CourseSearchBox from "./CourseSearchBox";
 import ChatShell from "./chat/ChatShell";
 import ProfileGate from "./ProfileGate";
 import ProfileOnboardingForm from "./ProfileOnboardingForm";
+import AllReviewsSection from "./AllReviewsSection";
 
 export { 
     HomeSection,
@@ -24,6 +25,7 @@ export {
     ChatShell,
     ProfileGate,
     ProfileOnboardingForm,
+    AllReviewsSection,
     
 
 };

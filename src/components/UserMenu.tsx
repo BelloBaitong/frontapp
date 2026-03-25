@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clearToken, getToken, parseJwt } from "@/lib/auth";
+import { userProfileGetMe, type UserProfileDto } from "@/lib/api";
 
 type JwtUser = {
   sub?: string | number;
@@ -13,15 +14,13 @@ type JwtUser = {
 export default function UserMenu() {
   const [open, setOpen] = useState(false);
   const [token, setTokenState] = useState<string | null>(null);
-  const [profile, setProfile] = useState<any>(null); // เพิ่ม state สำหรับโปรไฟล์
+  const [profile, setProfile] = useState<UserProfileDto | null>(null);
   const triggerRef = useRef<HTMLDivElement | null>(null);
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
-    // init token state
     setTokenState(getToken());
 
-    // sync token between tabs after login
     const onStorage = () => setTokenState(getToken());
     window.addEventListener("storage", onStorage);
 
@@ -32,33 +31,39 @@ export default function UserMenu() {
     };
   }, []);
 
-  // Get user info from JWT token
   const user = useMemo(() => {
     if (!token) return null;
     return parseJwt<JwtUser>(token);
   }, [token]);
 
   useEffect(() => {
-    if (token) {
-      // Fetch user profile from backend
-      const fetchProfile = async () => {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/user/profile/me`, {          
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-          },
-        });
-        const data = await response.json();
-        setProfile(data); // Save profile data
-      };
-      fetchProfile();
+    if (!token) {
+      setProfile(null);
+      return;
     }
-  }, [token]);
 
-  const handleEditClick = () => {
-    // ใช้ window.location.href เพื่อไปที่หน้า ProfileOnboardingForm
-    window.location.href = "/onboarding";
-  };
+    let cancelled = false;
+
+    const fetchProfile = async () => {
+      try {
+        const data = await userProfileGetMe();
+        if (!cancelled) {
+          setProfile(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch profile:", error);
+        if (!cancelled) {
+          setProfile(null);
+        }
+      }
+    };
+
+    fetchProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     setImgError(false);
@@ -68,6 +73,44 @@ export default function UserMenu() {
 
   const displayName = user?.name || user?.email || "Student";
   const hasPicture = !!user?.picture && !imgError;
+
+  const completedCourses = profile?.courses ?? [];
+
+ const renderCoursesList = () => {
+  const list = Array.isArray(completedCourses) ? completedCourses : [];
+
+  return (
+    <div className="mt-3">
+      <p className="text-sm text-gray-500">วิชาที่เคยเรียนแล้ว:</p>
+
+      {list.length > 0 ? (
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          {list.map((course, index) => {
+            const code = course?.courseCode ?? course?.code ?? "";
+            const nameTh = course?.courseNameTh ?? "-";
+
+            return (
+              <li
+                key={course?.id ?? `${code}-${index}`}
+                className="text-sm font-semibold text-gray-900"
+              >
+                {code ? `${code} — ${nameTh}` : nameTh}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-sm font-semibold text-gray-900">
+          ยังไม่ได้เลือกวิชาที่เคยเรียนแล้ว
+        </p>
+      )}
+    </div>
+  );
+};
+
+  const handleEditClick = () => {
+    window.location.href = "/onboarding";
+  };
 
   return (
     <div className="relative">
@@ -83,7 +126,7 @@ export default function UserMenu() {
           }
           if (e.key === "Escape") setOpen(false);
         }}
-        className="h-10 w-10 rounded-full bg-white/70 border border-white/60 shadow flex items-center justify-center hover:bg-white/90 transition cursor-pointer select-none outline-none focus:ring-2 focus:ring-black/10"
+        className="flex h-10 w-10 cursor-pointer select-none items-center justify-center rounded-full border border-white/60 bg-white/70 shadow outline-none transition hover:bg-white/90 focus:ring-2 focus:ring-black/10"
         aria-label="User menu"
         aria-expanded={open}
       >
@@ -102,63 +145,56 @@ export default function UserMenu() {
 
       {open && (
         <>
-          <div className="absolute right-0 mt-3 w-72 rounded-2xl bg-white/95 shadow-xl border border-black/5 overflow-hidden z-50">
+          <div className="absolute right-0 z-50 mt-3 w-72 overflow-hidden rounded-2xl border border-black/5 bg-white/95 shadow-xl">
             <div className="p-4">
               <p className="text-sm text-gray-500">ลงชื่อเข้าใช้แล้ว</p>
-              <p className="font-bold text-gray-900 truncate">{displayName}</p>
+              <p className="truncate font-bold text-gray-900">{displayName}</p>
               {user?.email && (
-                <p className="text-sm text-gray-600 truncate">{user.email}</p>
+                <p className="truncate text-sm text-gray-600">{user.email}</p>
               )}
             </div>
 
-            {/* แสดงข้อมูลโปรไฟล์ที่ดึงมา */}
-{/* แสดงข้อมูลโปรไฟล์ที่ดึงมา */}
             {profile && (
-              <div className="p-4">
+              <div className="p-4 pt-0">
                 <p className="text-sm text-gray-500">ความสนใจ:</p>
                 <p className="font-semibold text-gray-900">
-                  {profile?.interests?.join(", ") || "ไม่มีความสนใจที่เลือกไว้"}
+                  {profile.interests?.join(", ") || "ไม่มีความสนใจที่เลือกไว้"}
                 </p>
-                
-                {/* เพิ่มส่วนที่แสดงอาชีพที่สนใจในอนาคต */}
-                <p className="text-sm text-gray-500 mt-2">อาชีพที่สนใจ:</p>
+
+                <p className="mt-2 text-sm text-gray-500">อาชีพที่สนใจ:</p>
                 <p className="font-semibold text-gray-900">
-                  {profile?.careerGoals?.join(", ") || "ไม่มีอาชีพที่สนใจ"}
+                  {profile.careerGoals?.join(", ") || "ไม่มีอาชีพที่สนใจ"}
                 </p>
+
+                {renderCoursesList()}
               </div>
             )}
-
-            
 
             <div className="border-t border-black/5 p-2">
               <button
                 type="button"
-                onClick={handleEditClick} // เมื่อคลิกจะไปหน้า ProfileOnboardingForm
-                className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-black/5 transition"
+                onClick={handleEditClick}
+                className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition hover:bg-black/5"
               >
                 แก้ไขข้อมูลโปรไฟล์
               </button>
-              
+
               <button
                 type="button"
                 onClick={() => {
                   clearToken();
                   setTokenState(null);
                   setOpen(false);
-                  window.location.href = "/"; // รีเฟรชสถานะ
+                  window.location.href = "/";
                 }}
-                className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-black/5 transition"
+                className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition hover:bg-black/5"
               >
                 ออกจากระบบ
               </button>
             </div>
           </div>
 
-          {/* click outside */}
-          <div
-            className="fixed inset-0 z-40"
-            onMouseDown={() => setOpen(false)}
-          />
+          <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
         </>
       )}
     </div>

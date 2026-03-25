@@ -53,8 +53,6 @@ export async function syncProfileFromApi(): Promise<boolean> {
       year: remote.studyYear as 1 | 2 | 3 | 4,      
       interests: Array.isArray(remote.interests) ? remote.interests : [],
       careerGoals: Array.isArray(remote.careerGoals) ? remote.careerGoals : [],
-      difficultyPreference: "medium", // ถ้าคุณตัด step3 ออก ก็ set ค่า default ได้
-      learningStyle: "balanced",      // ถ้าคุณตัด step3 ออก ก็ set ค่า default ได้
       createdAt: remote.createdAt ?? now,
       updatedAt: remote.updatedAt ?? now,
     };

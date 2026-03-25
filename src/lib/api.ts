@@ -1,4 +1,5 @@
 // src/lib/api.ts
+import type { Course } from "@/types/course";
 import { getToken } from "./auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -38,9 +39,9 @@ export async function apiFetch<T>(
 
   const h = new Headers(headers);
 
-  // ถ้าส่ง body เป็น object ให้ใส่ content-type + stringify ให้
   const hasBody = rest.body !== undefined && rest.body !== null;
-  const isFormData = typeof FormData !== "undefined" && rest.body instanceof FormData;
+  const isFormData =
+    typeof FormData !== "undefined" && rest.body instanceof FormData;
 
   if (hasBody && !isFormData && !h.has("Content-Type")) {
     h.set("Content-Type", "application/json");
@@ -59,7 +60,8 @@ export async function apiFetch<T>(
   const data = await parseJsonSafe(res);
 
   if (!res.ok) {
-    const body = (typeof data === "object" && data) ? (data as ApiErrorBody) : undefined;
+    const body =
+      typeof data === "object" && data ? (data as ApiErrorBody) : undefined;
 
     const msg =
       (body?.message
@@ -67,8 +69,8 @@ export async function apiFetch<T>(
           ? body.message.join(", ")
           : body.message
         : typeof data === "string"
-          ? data
-          : null) ?? `Request failed (${res.status})`;
+        ? data
+        : null) ?? `Request failed (${res.status})`;
 
     throw new ApiError(res.status, msg, body);
   }
@@ -76,8 +78,19 @@ export async function apiFetch<T>(
   return data as T;
 }
 
-/** ====== API functions (เริ่มจาก RAG ก่อน) ====== */
-export type RagRequest = { queryText: string; topK?: number };
+/** ====== RAG API ====== */
+export type RagHistoryItem = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type RagRequest = {
+  queryText: string;
+  topK?: number;
+  chatHistory?: RagHistoryItem[] | null;
+  sessionContext?: Record<string, any> | null;
+};
+
 export type RagSource = {
   courseCode: string;
   courseNameTh: string;
@@ -88,17 +101,22 @@ export type RagSource = {
   imageUrl?: string;
   distance?: number;
 };
-export type RagResponse = { answer: string; sources: RagSource[] };
+
+export type RagResponse = {
+  answer: string;
+  sources: RagSource[];
+  sessionContext?: Record<string, any> | null;
+};
 
 export function ragAsk(payload: RagRequest) {
   return apiFetch<RagResponse>("/recommendations/rag", {
     method: "POST",
     body: JSON.stringify(payload),
-    auth: true, // endpoint นี้คุณใส่ JWT guard แล้ว
+    auth: true,
   });
 }
 
-// ===== Chat API =====
+/** ===== Chat API ===== */
 export type ChatSessionDto = {
   id: string;
   title: string;
@@ -106,15 +124,31 @@ export type ChatSessionDto = {
   updatedAt?: string;
 };
 
+export type ChatSourceDto = {
+  courseCode: string;
+  courseNameTh: string;
+  courseNameEn: string;
+  description?: string;
+  category?: string;
+  credits?: number;
+  imageUrl?: string;
+  distance?: number;
+};
+
 export type ChatMessageDto = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  sources?: any;
+  sources?: ChatSourceDto[] | null;
   createdAt: string;
 };
 
-// สร้างห้องใหม่
+export type ChatSendMessageResponse = {
+  userMessage: ChatMessageDto;
+  assistantMessage: ChatMessageDto;
+  sessionContext?: Record<string, any> | null;
+};
+
 export function chatCreateSession(title?: string) {
   return apiFetch<ChatSessionDto>("/chat/sessions", {
     method: "POST",
@@ -123,7 +157,13 @@ export function chatCreateSession(title?: string) {
   });
 }
 
-// list ห้องทั้งหมด
+export async function chatDeleteSession(sessionId: string) {
+  return apiFetch(`/chat/sessions/${sessionId}`, {
+    method: "DELETE",
+    auth: true,
+  });
+}
+
 export function chatListSessions() {
   return apiFetch<ChatSessionDto[]>("/chat/sessions", {
     method: "GET",
@@ -131,7 +171,6 @@ export function chatListSessions() {
   });
 }
 
-// list messages ของห้อง
 export function chatListMessages(sessionId: string) {
   return apiFetch<ChatMessageDto[]>(`/chat/sessions/${sessionId}/messages`, {
     method: "GET",
@@ -139,25 +178,33 @@ export function chatListMessages(sessionId: string) {
   });
 }
 
-// ส่งข้อความ (backend จะ save + call rag + save แล้วคืน userMessage/assistantMessage)
-export function chatSendMessage(sessionId: string, content: string, topK = 3) {
-  return apiFetch<{
-    userMessage: ChatMessageDto;
-    assistantMessage: ChatMessageDto;
-  }>(`/chat/sessions/${sessionId}/messages`, {
-    method: "POST",
-    body: JSON.stringify({ content, topK }),
-    auth: true,
-  });
+export function chatSendMessage(sessionId: string, content: string, topK = 5) {
+  return apiFetch<ChatSendMessageResponse>(
+    `/chat/sessions/${sessionId}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({ content, topK }),
+      auth: true,
+    }
+  );
 }
 
-// ===== User Profile API =====
+/** ===== User Profile API ===== */
+export type UserProfileCourseDto = {
+  id: number;
+  courseCode: string;
+  courseNameTh?: string | null;
+  courseNameEn?: string | null;
+};
+
 export type UserProfileDto = {
   id: number;
   userId: number;
   studyYear: number | null;
   interests: string[];
   careerGoals: string[];
+  completedCourseIds?: number[];
+  courses?: UserProfileCourseDto[];
   createdAt: string;
   updatedAt: string;
 };
@@ -166,9 +213,11 @@ export type UpsertUserProfilePayload = {
   studyYear?: number;
   interests?: string[];
   careerGoals?: string[];
+  completedCourseIds?: number[];
 };
 
-// GET โปรไฟล์ของตัวเอง
+
+
 export function userProfileGetMe() {
   return apiFetch<UserProfileDto>("/user/profile/me", {
     method: "GET",
@@ -176,7 +225,6 @@ export function userProfileGetMe() {
   });
 }
 
-// upsert โปรไฟล์ของตัวเอง
 export function userProfileUpsertMe(payload: UpsertUserProfilePayload) {
   return apiFetch<UserProfileDto>("/user/profile/me", {
     method: "PUT",
@@ -185,13 +233,26 @@ export function userProfileUpsertMe(payload: UpsertUserProfilePayload) {
   });
 }
 
-export function getRecommendedCourses({ userId, limit = 10 }: { userId: number, limit?: number }) {
+/** ===== Course API ===== */
+export function searchCourses(q: string, limit = 8) {
+  const params = new URLSearchParams({
+    q,
+    limit: String(limit),
+  });
+
+  return apiFetch<Course[]>(`/course/search?${params.toString()}`, {
+    method: "GET",
+    auth: false,
+  });
+}
+
+export function getRecommendedCourses({ limit = 10 }: { limit?: number }) {
   return apiFetch<{ ok: boolean; count: number; courses: any[] }>(
-    "/recommendations/courses",
+    "/courses/recommend",
     {
       method: "POST",
-      body: JSON.stringify({ userId: userId, limit: limit }), // ตรวจสอบว่า userId ถูกส่งใน body ของคำขอ
-      auth: true, // ✅ ส่ง Bearer token
+      body: JSON.stringify({ limit }),
+      auth: true,
     }
   );
 }

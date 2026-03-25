@@ -56,7 +56,7 @@ export default function Navbar() {
               className="shrink-0"
             >
               <CustomButton
-                title="เริ่มคุยกับ AI"
+                title="Login เพื่อเริ่มคุยกับ AI"
                 btnType="button"
                 containerStyles="text-purple-600 font-bold rounded-full bg-white/90 min-w-[150px]"
               />

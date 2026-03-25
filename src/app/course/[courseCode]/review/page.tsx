@@ -220,6 +220,7 @@ export default function NewReviewPage() {
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 rows={5}
+                maxLength={700}
                 placeholder="เล่าได้เลยว่าเรียนเป็นยังไง..."
                 className="w-full rounded-2xl border border-black/10 bg-white/90 p-4 outline-none focus:ring-2 focus:ring-black/10"
               />

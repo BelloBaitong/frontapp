@@ -1,33 +1,43 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import type { Course } from "@/types/course";
 import type { UserProfile, StudyYear } from "@/types/userProfile";
 import { DEFAULT_INTERESTS, DEFAULT_CAREER_GOALS } from "@/types/userProfile";
+import { searchCourses } from "@/lib/api";
 import CustomButton from "@/components/CustomButton";
 
 function cn(...classes: Array<string | false | undefined | null>) {
   return classes.filter(Boolean).join(" ");
 }
 
-/** ===== UI: Stepper ===== */
-function Stepper({ step }: { step: 1 | 2 }) {
+function normalizeText(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function isSameText(a: string, b: string) {
+  return normalizeText(a).toLowerCase() === normalizeText(b).toLowerCase();
+}
+
+function Stepper({ step }: { step: 1 | 2 | 3 }) {
   const items = [
     { n: 1, label: "พื้นฐาน" },
     { n: 2, label: "อาชีพ" },
+    { n: 3, label: "วิชาที่เคยเรียนแล้ว" },
   ] as const;
 
   return (
-    <div className="rounded-2xl bg-white/55 ring-1 ring-black/5 px-4 py-3">
+    <div className="rounded-2xl bg-white/55 px-4 py-3 ring-1 ring-black/5">
       <div className="flex items-center justify-between gap-3">
         {items.map((it, idx) => {
           const active = step === it.n;
           const done = step > it.n;
 
           return (
-            <div key={it.n} className="flex items-center gap-3 flex-1">
+            <div key={it.n} className="flex flex-1 items-center gap-3">
               <div
                 className={cn(
-                  "h-9 w-9 rounded-full grid place-items-center font-extrabold text-sm ring-1 transition",
+                  "grid h-9 w-9 place-items-center rounded-full text-sm font-extrabold ring-1 transition",
                   done
                     ? "bg-emerald-500 text-white ring-emerald-500"
                     : active
@@ -41,17 +51,17 @@ function Stepper({ step }: { step: 1 | 2 }) {
               <div className="min-w-0">
                 <p
                   className={cn(
-                    "text-sm font-bold truncate",
+                    "truncate text-sm font-bold",
                     active ? "text-gray-900" : "text-gray-700"
                   )}
                 >
                   Step {it.n}
                 </p>
-                <p className="text-xs text-gray-600 truncate">{it.label}</p>
+                <p className="truncate text-xs text-gray-600">{it.label}</p>
               </div>
 
               {idx < items.length - 1 && (
-                <div className="h-[2px] flex-1 rounded-full bg-black/10 mx-2" />
+                <div className="mx-2 h-[2px] flex-1 rounded-full bg-black/10" />
               )}
             </div>
           );
@@ -61,7 +71,6 @@ function Stepper({ step }: { step: 1 | 2 }) {
   );
 }
 
-/** ===== UI: Card ===== */
 function Card({
   title,
   subtitle,
@@ -72,8 +81,8 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl bg-white/70 ring-1 ring-black/5 shadow-sm overflow-hidden">
-      <header className="px-6 py-5 border-b border-black/5 bg-white/60">
+    <section className="overflow-hidden rounded-3xl bg-white/70 shadow-sm ring-1 ring-black/5">
+      <header className="border-b border-black/5 bg-white/60 px-6 py-5">
         <h2 className="text-xl font-extrabold text-gray-900">{title}</h2>
         {subtitle && <p className="mt-1 text-sm text-gray-600">{subtitle}</p>}
       </header>
@@ -82,7 +91,6 @@ function Card({
   );
 }
 
-/** ===== UI: Pill ===== */
 function Pill({
   active,
   children,
@@ -97,8 +105,7 @@ function Pill({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-full px-3 py-1.5 text-sm font-semibold transition select-none",
-        "ring-1 shadow-sm",
+        "select-none rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 shadow-sm",
         active
           ? "bg-gray-900 text-white ring-gray-900/60"
           : "bg-white/60 text-gray-800 ring-black/10 hover:bg-white/80"
@@ -112,26 +119,149 @@ function Pill({
   );
 }
 
-/** ===== UI: Selected Summary ===== */
-function SelectedLine({
-  label,
+function SelectedChipList({
   values,
+  onRemove,
+  emptyText,
+}: {
+  values: string[];
+  onRemove: (value: string) => void;
+  emptyText: string;
+}) {
+  if (values.length === 0) {
+    return <p className="text-sm text-gray-500">{emptyText}</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {values.map((value) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onRemove(value)}
+          className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-3 py-1.5 text-sm font-semibold text-white shadow-sm"
+        >
+          <span>{value}</span>
+          <span className="text-xs opacity-80">✕</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function InputAddBox({
+  label,
+  description,
   placeholder,
+  inputValue,
+  onInputChange,
+  onAdd,
 }: {
   label: string;
-  values: string[];
+  description: string;
   placeholder: string;
+  inputValue: string;
+  onInputChange: (value: string) => void;
+  onAdd: () => void;
 }) {
   return (
-    <div className="mt-3 rounded-2xl bg-white/50 ring-1 ring-black/5 px-4 py-3">
-      <p className="text-xs font-bold text-gray-700">{label}</p>
-      <p className="mt-1 text-sm text-gray-800">
-        {values.length ? (
-          values.join(", ")
-        ) : (
-          <span className="text-gray-500">{placeholder}</span>
-        )}
-      </p>
+    <div className="mt-4 rounded-2xl bg-white/60 p-4 ring-1 ring-black/5">
+      <div className="mb-2">
+        <p className="text-sm font-bold text-gray-800">{label}</p>
+        <p className="mt-1 text-xs text-gray-600">{description}</p>
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onAdd();
+            }
+          }}
+          placeholder={placeholder}
+          className="h-11 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400"
+        />
+
+        <button
+          type="button"
+          onClick={onAdd}
+          className="h-11 rounded-xl bg-gray-900 px-4 text-sm font-bold text-white transition hover:opacity-90"
+        >
+          เพิ่ม
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SelectedCourseList({
+  values,
+  onRemove,
+}: {
+  values: Course[];
+  onRemove: (courseId: number) => void;
+}) {
+  if (values.length === 0) {
+    return <p className="text-sm text-gray-500">ยังไม่ได้เลือกวิชาที่เคยเรียนแล้ว</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {values.map((course) => (
+        <button
+          key={course.id}
+          type="button"
+          onClick={() => onRemove(course.id)}
+          className="inline-flex max-w-full items-center gap-2 rounded-full bg-gray-900 px-3 py-1.5 text-left text-sm font-semibold text-white shadow-sm"
+        >
+          <span className="truncate">
+            {course.courseCode} · {course.courseNameTh}
+          </span>
+          <span className="text-xs opacity-80">✕</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CourseResultList({
+  courses,
+  onSelect,
+}: {
+  courses: Course[];
+  onSelect: (course: Course) => void;
+}) {
+  if (courses.length === 0) return null;
+
+  return (
+    <div className="mt-3 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      {courses.map((course) => (
+        <button
+          key={course.id}
+          type="button"
+          onClick={() => onSelect(course)}
+          className="flex w-full flex-col items-start gap-1 border-b border-gray-100 px-4 py-3 text-left transition hover:bg-gray-50 last:border-b-0"
+        >
+          <div className="flex w-full items-center justify-between gap-3">
+            <p className="text-sm font-bold text-gray-900">
+              {course.courseCode}
+            </p>
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+              {course.category}
+            </span>
+          </div>
+
+          <p className="text-sm text-gray-800">{course.courseNameTh}</p>
+
+          {course.courseNameEn ? (
+            <p className="text-xs text-gray-500">{course.courseNameEn}</p>
+          ) : null}
+        </button>
+      ))}
     </div>
   );
 }
@@ -143,91 +273,195 @@ export default function ProfileOnboardingForm({
   onSubmit: (profile: UserProfile) => Promise<void> | void;
   loading?: boolean;
 }) {
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
   const [year, setYear] = useState<StudyYear | null>(null);
   const [interests, setInterests] = useState<string[]>([]);
   const [careerGoals, setCareerGoals] = useState<string[]>([]);
+  const [selectedCourses, setSelectedCourses] = useState<Course[]>([]);
 
-  const canNextStep1 = year !== null && interests.length >= 3;
-  const canSubmit = canNextStep1 && careerGoals.length >= 1;
+  const [customInterestInput, setCustomInterestInput] = useState("");
+  const [customCareerGoalInput, setCustomCareerGoalInput] = useState("");
 
-  // เพิ่ม interests ตามที่คุณให้มา (กันซ้ำ ถ้ามีอยู่แล้วไม่เพิ่ม)
-  const mergedInterests = useMemo(() => {
-    const extra = [
-      "AI / Machine Learning",
-      "Computer Vision",
-      "Data Science",
-      "Data Engineering",
-      "Web Development (Frontend)",
-      "Backend Development",
-      "Mobile App",
-      "Cloud Computing",
-      "Cybersecurity",
-      "DevOps",
-      "Software Engineering",
-      "Database Systems",
-      "UX/UI",
-      "Software Testing",
-      "Game Development",
-      "IoT",
-      "Embedded Systems",
-      "Research / Academic",
-      "Tech Business / Product",
-    ];
+  const [courseQuery, setCourseQuery] = useState("");
+  const [courseResults, setCourseResults] = useState<Course[]>([]);
+  const [searchingCourses, setSearchingCourses] = useState(false);
+  const [courseSearchMessage, setCourseSearchMessage] = useState("");
 
-    const set = new Set<string>(DEFAULT_INTERESTS.map((x) => String(x).trim()));
-    for (const x of extra) set.add(x.trim());
-    return Array.from(set);
-  }, []);
+  const canNextStep1 = year !== null && interests.length >= 1;
+  const canNextStep2 = careerGoals.length >= 1;
+  const canSubmit = canNextStep2;
 
   const hint = useMemo(() => {
-    if (step === 1) return "เลือกชั้นปี + ความสนใจอย่างน้อย 3 หัวข้อ";
-    return "เลือกอาชีพที่สนใจอย่างน้อย 1 อาชีพ";
+    if (step === 1) {
+      return "เลือกหรือพิมพ์ความสนใจเองได้ ไม่จำกัดจำนวน แต่แนะนำประมาณ 3–8 หัวข้อเพื่อให้คำแนะนำแม่นขึ้น";
+    }
+
+    if (step === 2) {
+      return "เลือกหรือพิมพ์อาชีพที่สนใจเองได้อย่างน้อย 1 อาชีพ";
+    }
+
+    return "ค้นหารายวิชาเลือกที่คุณเคยเรียนแล้วเพื่อให้ระบบรู้ว่าคุณมีสิทธิ์รีวิววิชาใดบ้าง";
   }, [step]);
+
+  useEffect(() => {
+    if (step !== 3) return;
+
+    const trimmed = courseQuery.trim();
+
+    if (trimmed.length < 2) {
+      setCourseResults([]);
+      setSearchingCourses(false);
+      setCourseSearchMessage(
+        trimmed.length === 0 ? "" : "พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหารายวิชา"
+      );
+      return;
+    }
+
+    let cancelled = false;
+
+    const timer = window.setTimeout(async () => {
+      setSearchingCourses(true);
+      setCourseSearchMessage("");
+
+      try {
+        const rows = await searchCourses(trimmed, 8);
+
+        if (cancelled) return;
+
+        const filtered = rows
+          .filter((course) => course.category === "ELECTIVE")
+          .filter(
+            (course) => !selectedCourses.some((selected) => selected.id === course.id)
+          );
+
+        setCourseResults(filtered);
+
+        if (filtered.length === 0) {
+          setCourseSearchMessage("ไม่พบวิชาเลือกที่ตรงกับคำค้น");
+        }
+      } catch {
+        if (cancelled) return;
+        setCourseResults([]);
+        setCourseSearchMessage("ค้นหารายวิชาไม่สำเร็จ กรุณาลองใหม่");
+      } finally {
+        if (!cancelled) {
+          setSearchingCourses(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [courseQuery, selectedCourses, step]);
 
   const toggle = (
     list: string[],
     value: string,
-    max: number,
     set: (v: string[]) => void
   ) => {
-    if (list.includes(value)) {
-      set(list.filter((x) => x !== value));
+    const normalizedValue = normalizeText(value);
+    const exists = list.some((item) => isSameText(item, normalizedValue));
+
+    if (exists) {
+      set(list.filter((item) => !isSameText(item, normalizedValue)));
       return;
     }
-    if (list.length >= max) return;
-    set([...list, value]);
+
+    set([...list, normalizedValue]);
   };
 
-  const goNext = () => setStep((s) => (s === 1 ? 2 : 2));
-  const goBack = () => setStep((s) => (s === 2 ? 1 : 1));
+  const addUniqueItem = (
+    list: string[],
+    rawValue: string,
+    set: (v: string[]) => void,
+    clearInput: () => void
+  ) => {
+    const value = normalizeText(rawValue);
+    if (!value) return;
+
+    const exists = list.some((item) => isSameText(item, value));
+    if (exists) {
+      clearInput();
+      return;
+    }
+
+    set([...list, value]);
+    clearInput();
+  };
+
+  const removeInterest = (value: string) => {
+    setInterests((prev) => prev.filter((item) => !isSameText(item, value)));
+  };
+
+  const removeCareerGoal = (value: string) => {
+    setCareerGoals((prev) => prev.filter((item) => !isSameText(item, value)));
+  };
+
+  const addCustomInterest = () => {
+    addUniqueItem(
+      interests,
+      customInterestInput,
+      setInterests,
+      () => setCustomInterestInput("")
+    );
+  };
+
+  const addCustomCareerGoal = () => {
+    addUniqueItem(
+      careerGoals,
+      customCareerGoalInput,
+      setCareerGoals,
+      () => setCustomCareerGoalInput("")
+    );
+  };
+
+  const addCourse = (course: Course) => {
+    setSelectedCourses((prev) => {
+      if (prev.some((item) => item.id === course.id)) return prev;
+      return [...prev, course];
+    });
+
+    setCourseQuery("");
+    setCourseResults([]);
+    setCourseSearchMessage("");
+  };
+
+  const removeCourse = (courseId: number) => {
+    setSelectedCourses((prev) => prev.filter((item) => item.id !== courseId));
+  };
+
+  const goStep2 = () => setStep(2);
+  const goStep1 = () => setStep(1);
+  const goStep3 = () => setStep(3);
+  const goStep2FromStep3 = () => setStep(2);
 
   const handleSubmit = async () => {
     if (!canSubmit || year === null) return;
 
     const now = new Date().toISOString();
+
     const profile: UserProfile = {
       year,
       interests,
       careerGoals,
+      completedCourseIds: selectedCourses.map((course) => course.id),
       createdAt: now,
       updatedAt: now,
-      difficultyPreference: "easy",
-      learningStyle: "project"
     };
 
     await onSubmit(profile);
   };
 
-  /** ใช้ CSS เพื่อทำให้ "disabled" เห็นชัด โดยไม่ต้องแก้ CustomButton */
   const disabledStyles = "opacity-50 pointer-events-none";
 
   return (
     <div className="space-y-4">
       <Stepper step={step} />
 
-      <div className="rounded-2xl bg-white/40 ring-1 ring-black/5 px-4 py-3">
+      <div className="rounded-2xl bg-white/40 px-4 py-3 ring-1 ring-black/5">
         <p className="text-sm text-gray-700">
           <span className="font-bold">คำใบ้:</span> {hint}
         </p>
@@ -235,16 +469,17 @@ export default function ProfileOnboardingForm({
 
       {/* ===== STEP 1 ===== */}
       {step === 1 && (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="animate-in slide-in-from-bottom-2 fade-in duration-200">
           <Card
             title="ข้อมูลพื้นฐาน"
             subtitle="ช่วยให้ระบบแนะนำวิชาได้เหมาะกับระดับของคุณ"
           >
             <div className="space-y-6">
               <div>
-                <p className="text-sm font-bold text-gray-800 mb-2">
+                <p className="mb-2 text-sm font-bold text-gray-800">
                   ชั้นปีการศึกษา
                 </p>
+
                 <div className="flex flex-wrap gap-2">
                   {[1, 2, 3, 4].map((y) => (
                     <Pill
@@ -257,44 +492,65 @@ export default function ProfileOnboardingForm({
                   ))}
                 </div>
 
-                <SelectedLine
-                  label="ชั้นปีที่เลือก"
-                  values={year ? [`ปี ${year}`] : []}
-                  placeholder="ยังไม่ได้เลือก"
-                />
+                <div className="mt-3 rounded-2xl bg-white/50 px-4 py-3 ring-1 ring-black/5">
+                  <p className="text-xs font-bold text-gray-700">ชั้นปีที่เลือก</p>
+                  <p className="mt-1 text-sm text-gray-800">
+                    {year ? (
+                      `ปี ${year}`
+                    ) : (
+                      <span className="text-gray-500">ยังไม่ได้เลือก</span>
+                    )}
+                  </p>
+                </div>
               </div>
 
               <div>
-                <div className="flex items-end justify-between mb-2">
-                  <p className="text-sm font-bold text-gray-800">
-                    ความสนใจ (เลือก 3–5)
-                  </p>
+                <div className="mb-2 flex items-end justify-between">
+                  <p className="text-sm font-bold text-gray-800">ความสนใจ</p>
                   <p className="text-xs text-gray-600">
-                    เลือกแล้ว {interests.length}/5
+                    เลือก/กรอกแล้ว {interests.length} หัวข้อ
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {mergedInterests.map((tag) => (
+                  {DEFAULT_INTERESTS.map((tag) => (
                     <Pill
                       key={tag}
-                      active={interests.includes(tag)}
-                      onClick={() => toggle(interests, tag, 5, setInterests)}
+                      active={interests.some((item) => isSameText(item, tag))}
+                      onClick={() => toggle(interests, tag, setInterests)}
                     >
                       {tag}
                     </Pill>
                   ))}
                 </div>
 
-                <SelectedLine
-                  label="ความสนใจที่เลือก"
-                  values={interests}
-                  placeholder="เลือกอย่างน้อย 3 หัวข้อ"
+                <InputAddBox
+                  label="ความสนใจอื่น ๆ"
+                  description="ถ้าไม่มีในตัวเลือก สามารถพิมพ์เพิ่มเองได้ เช่น LLM, Computer Graphics, Prompt Engineering, Digital Twin"
+                  placeholder="พิมพ์ความสนใจเพิ่มเติม"
+                  inputValue={customInterestInput}
+                  onInputChange={setCustomInterestInput}
+                  onAdd={addCustomInterest}
                 />
 
+                <div className="mt-3 rounded-2xl bg-white/50 px-4 py-3 ring-1 ring-black/5">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-bold text-gray-700">
+                      ความสนใจที่เลือก
+                    </p>
+                    <p className="text-xs text-gray-500">แนะนำ 3–8 หัวข้อ</p>
+                  </div>
+
+                  <SelectedChipList
+                    values={interests}
+                    onRemove={removeInterest}
+                    emptyText="ยังไม่ได้เลือกหรือเพิ่มความสนใจ"
+                  />
+                </div>
+
                 {interests.length > 0 && interests.length < 3 && (
-                  <p className="mt-2 text-xs font-semibold text-rose-700">
-                    ต้องเลือกอย่างน้อย 3 หัวข้อ
+                  <p className="mt-2 text-xs font-semibold text-amber-700">
+                    สามารถไปต่อได้ แต่แนะนำให้มีอย่างน้อย 3 หัวข้อเพื่อให้ระบบแนะนำได้แม่นขึ้น
                   </p>
                 )}
               </div>
@@ -304,7 +560,7 @@ export default function ProfileOnboardingForm({
                   <CustomButton
                     title="ถัดไป"
                     btnType="button"
-                    handleClick={goNext}
+                    handleClick={goStep2}
                     containerStyles=""
                   />
                 </div>
@@ -316,19 +572,17 @@ export default function ProfileOnboardingForm({
 
       {/* ===== STEP 2 ===== */}
       {step === 2 && (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="animate-in slide-in-from-bottom-2 fade-in duration-200">
           <Card
             title="เป้าหมายอาชีพ"
             subtitle="เพื่อให้ระบบจัดลำดับรายวิชาให้ตรงสายที่คุณอยากไป"
           >
             <div className="space-y-6">
               <div>
-                <div className="flex items-end justify-between mb-2">
-                  <p className="text-sm font-bold text-gray-800">
-                    อาชีพที่สนใจ (เลือก 1–5)
-                  </p>
+                <div className="mb-2 flex items-end justify-between">
+                  <p className="text-sm font-bold text-gray-800">อาชีพที่สนใจ</p>
                   <p className="text-xs text-gray-600">
-                    เลือกแล้ว {careerGoals.length}/5
+                    เลือก/กรอกแล้ว {careerGoals.length} อาชีพ
                   </p>
                 </div>
 
@@ -336,23 +590,38 @@ export default function ProfileOnboardingForm({
                   {DEFAULT_CAREER_GOALS.map((goal) => (
                     <Pill
                       key={goal}
-                      active={careerGoals.includes(goal)}
-                      onClick={() => toggle(careerGoals, goal, 5, setCareerGoals)}
+                      active={careerGoals.some((item) => isSameText(item, goal))}
+                      onClick={() => toggle(careerGoals, goal, setCareerGoals)}
                     >
                       {goal}
                     </Pill>
                   ))}
                 </div>
 
-                <SelectedLine
-                  label="อาชีพที่เลือก"
-                  values={careerGoals}
-                  placeholder="เลือกอย่างน้อย 1 อาชีพ"
+                <InputAddBox
+                  label="อาชีพอื่น ๆ"
+                  description="ถ้าไม่มีในตัวเลือก สามารถพิมพ์เพิ่มเองได้ เช่น AI Product Manager, MLOps Engineer, Computer Vision Specialist, Technical Program Manager"
+                  placeholder="พิมพ์อาชีพที่สนใจเพิ่มเติม"
+                  inputValue={customCareerGoalInput}
+                  onInputChange={setCustomCareerGoalInput}
+                  onAdd={addCustomCareerGoal}
                 />
+
+                <div className="mt-3 rounded-2xl bg-white/50 px-4 py-3 ring-1 ring-black/5">
+                  <p className="mb-2 text-xs font-bold text-gray-700">
+                    อาชีพที่เลือก
+                  </p>
+
+                  <SelectedChipList
+                    values={careerGoals}
+                    onRemove={removeCareerGoal}
+                    emptyText="เลือกหรือพิมพ์อย่างน้อย 1 อาชีพ"
+                  />
+                </div>
 
                 {careerGoals.length === 0 && (
                   <p className="mt-2 text-xs font-semibold text-rose-700">
-                    ต้องเลือกอย่างน้อย 1 อาชีพ
+                    ต้องมีอย่างน้อย 1 อาชีพที่สนใจ
                   </p>
                 )}
               </div>
@@ -360,21 +629,107 @@ export default function ProfileOnboardingForm({
               <div className="flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={goBack}
+                  onClick={goStep1}
                   className="text-sm font-bold text-gray-700 hover:text-gray-900"
                 >
                   ย้อนกลับ
                 </button>
 
-                {/* เสร็จสิ้น */}
-                <div className={cn(!canSubmit && disabledStyles)}>
+                <div className={cn(!canNextStep2 && disabledStyles)}>
                   <CustomButton
-                    title={loading ? "กำลังบันทึก..." : "เสร็จสิ้น"}
+                    title="ถัดไป"
                     btnType="button"
-                    handleClick={handleSubmit}
+                    handleClick={goStep3}
                     containerStyles=""
                   />
                 </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="animate-in slide-in-from-bottom-2 fade-in duration-200">
+          <Card
+            title="วิชาที่เคยเรียนแล้ว"
+            subtitle="ค้นหาและเลือกรายวิชาเลือกที่คุณเคยเรียน เพื่อใช้กำหนดสิทธิ์การรีวิวในภายหลัง"
+          >
+            <div className="space-y-6">
+              <div>
+                <div className="mb-2 flex items-end justify-between">
+                  <p className="text-sm font-bold text-gray-800">
+                    ค้นหารายวิชาที่เคยเรียนแล้ว
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    เลือกแล้ว {selectedCourses.length} วิชา
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white/60 p-4 ring-1 ring-black/5">
+                  <p className="mb-2 text-sm font-bold text-gray-800">
+                    วิชาที่เคยเรียนแล้ว
+                  </p>
+                  <p className="mb-3 text-xs text-gray-600">
+                    ค้นหาจากรหัสวิชา ชื่อไทย หรือชื่ออังกฤษ
+                    ระบบจะแสดงเฉพาะวิชาเลือกให้เลือกก่อนในหน้านี้
+                  </p>
+
+                  <input
+                    type="text"
+                    value={courseQuery}
+                    onChange={(e) => setCourseQuery(e.target.value)}
+                    placeholder="เช่น 05506, Machine Learning, การออกแบบ"
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400"
+                  />
+
+                  {searchingCourses && (
+                    <p className="mt-3 text-xs font-semibold text-gray-500">
+                      กำลังค้นหารายวิชา...
+                    </p>
+                  )}
+
+                  {!searchingCourses && courseSearchMessage && (
+                    <p className="mt-3 text-xs font-semibold text-gray-500">
+                      {courseSearchMessage}
+                    </p>
+                  )}
+
+                  <CourseResultList courses={courseResults} onSelect={addCourse} />
+                </div>
+
+                <div className="mt-3 rounded-2xl bg-white/50 px-4 py-3 ring-1 ring-black/5">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-bold text-gray-700">
+                      วิชาที่เลือกไว้
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      ถ้ายังไม่เลือก จะยังรีวิววิชาไม่ได้
+                    </p>
+                  </div>
+
+                  <SelectedCourseList
+                    values={selectedCourses}
+                    onRemove={removeCourse}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={goStep2FromStep3}
+                  className="text-sm font-bold text-gray-700 hover:text-gray-900"
+                >
+                  ย้อนกลับ
+                </button>
+
+                <CustomButton
+                  title={loading ? "กำลังบันทึก..." : "เสร็จสิ้น"}
+                  btnType="button"
+                  handleClick={handleSubmit}
+                  containerStyles={cn(loading && "pointer-events-none opacity-70")}
+                />
               </div>
             </div>
           </Card>

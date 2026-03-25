@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import type { ChatMessage, ChatSession } from './chat.types';
+import type {
+  ChatMessage,
+  ChatSession,
+  SessionContext,
+} from './chat.types';
 
 import {
   chatCreateSession,
+  chatDeleteSession,
   chatListMessages,
   chatListSessions,
   chatSendMessage,
@@ -34,15 +39,19 @@ export default function ChatShell() {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
+  const [deletingId, setDeletingId] = useState<string>('');
+  const [sessionContextById, setSessionContextById] = useState<Record<string, SessionContext>>({});
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeId),
-    [sessions, activeId],
-  );
+  const loadMessages = async (sessionId: string) => {
+    const msgs = await chatListMessages(sessionId);
+    setMessages(msgs);
+  };
+  
+  const activeSessionContext = activeId ? sessionContextById[activeId] : null;
 
-  // Boot: load sessions -> pick first -> load messages
+
   useEffect(() => {
     let alive = true;
 
@@ -53,25 +62,20 @@ export default function ChatShell() {
         if (!alive) return;
 
         if (sess.length > 0) {
-          setSessions(sess as any);
-          const firstId = sess[0].id;
-          setActiveId(firstId);
-
-          const msgs = await chatListMessages(firstId);
+          setSessions(sess);
+          setActiveId(sess[0].id);
+          const msgs = await chatListMessages(sess[0].id);
           if (!alive) return;
-          setMessages(msgs as any);
+          setMessages(msgs);
         } else {
-          const created = await chatCreateSession('วิชาที่เรียนง่าย');
+          const created = await chatCreateSession('แชทใหม่');
           if (!alive) return;
 
-          setSessions([created] as any);
+          setSessions([created]);
           setActiveId(created.id);
-
-          const msgs = await chatListMessages(created.id);
-          if (!alive) return;
-          setMessages(msgs as any);
+          setMessages([]);
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (e instanceof ApiError && e.status === 401) {
           router.push('/auth');
           return;
@@ -85,10 +89,8 @@ export default function ChatShell() {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router]);
 
-  // when activeId changes -> load messages from DB
   useEffect(() => {
     if (!activeId) return;
 
@@ -97,8 +99,8 @@ export default function ChatShell() {
       try {
         const msgs = await chatListMessages(activeId);
         if (!alive) return;
-        setMessages(msgs as any);
-      } catch (e: any) {
+        setMessages(msgs);
+      } catch (e: unknown) {
         if (e instanceof ApiError && e.status === 401) {
           router.push('/auth');
           return;
@@ -112,7 +114,16 @@ export default function ChatShell() {
     };
   }, [activeId, router]);
 
-  // autoscroll
+  useEffect(() => {
+  if (process.env.NODE_ENV === 'development' && activeSessionContext) {
+    console.log(
+      '%c sessionContext active',
+      'color: green; font-weight: bold;',
+      activeSessionContext
+    );
+  }
+}, [activeSessionContext]);
+
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
@@ -122,12 +133,14 @@ export default function ChatShell() {
   const createNewSession = async () => {
     try {
       const created = await chatCreateSession('แชทใหม่');
-      setSessions((prev) => [created as any, ...prev]);
+      setSessions((prev) => [created, ...prev]);
       setActiveId(created.id);
-
-      const msgs = await chatListMessages(created.id);
-      setMessages(msgs as any);
-    } catch (e: any) {
+      setMessages([]);
+      setSessionContextById((prev) => ({
+        ...prev,
+        [created.id]: null,
+      }));
+    } catch (e: unknown) {
       if (e instanceof ApiError && e.status === 401) {
         router.push('/auth');
         return;
@@ -136,7 +149,58 @@ export default function ChatShell() {
     }
   };
 
-  const selectSession = (id: string) => setActiveId(id);
+  const selectSession = (id: string) => {
+    if (id === activeId) return;
+    setActiveId(id);
+  };
+
+  const deleteSession = async (sessionId: string) => {
+    if (!sessionId || deletingId) return;
+
+    const session = sessions.find((s) => s.id === sessionId);
+    const ok = window.confirm(`ต้องการลบแชท "${session?.title ?? 'แชทนี้'}" ใช่ไหม`);
+    if (!ok) return;
+
+    setDeletingId(sessionId);
+
+    try {
+      await chatDeleteSession(sessionId);
+
+      const remaining = sessions.filter((s) => s.id !== sessionId);
+      setSessions(remaining);
+
+      setSessionContextById((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+
+      if (remaining.length === 0) {
+        const created = await chatCreateSession('แชทใหม่');
+        setSessions([created]);
+        setActiveId(created.id);
+        setMessages([]);
+        setSessionContextById({ [created.id]: null });
+        return;
+      }
+
+      if (activeId === sessionId) {
+        const nextId = remaining[0].id;
+        setActiveId(nextId);
+        const nextMessages = await chatListMessages(nextId);
+        setMessages(nextMessages);
+      }
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.status === 401) {
+        router.push('/auth');
+        return;
+      }
+      console.error(e);
+      alert('ลบแชทไม่สำเร็จ');
+    } finally {
+      setDeletingId('');
+    }
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -145,28 +209,38 @@ export default function ChatShell() {
     setInput('');
     setIsSending(true);
 
-    // optimistic UI
     const optimisticUser: ChatMessage = {
       id: newId(),
       role: 'user',
       content: text,
       createdAt: new Date().toISOString(),
-    } as any;
+      sources: null,
+    };
+
     setMessages((prev) => [...prev, optimisticUser]);
 
     try {
-      const res = await chatSendMessage(activeId, text, 3);
+      const res = await chatSendMessage(activeId, text, 15);
 
       setMessages((prev) => {
         const trimmed = prev.slice(0, -1);
-        return [...trimmed, res.userMessage as any, res.assistantMessage as any];
+        return [...trimmed, res.userMessage, res.assistantMessage];
       });
 
+      if (Object.prototype.hasOwnProperty.call(res, 'sessionContext')) {
+        setSessionContextById((prev) => ({
+          ...prev,
+          [activeId]: res.sessionContext ?? null,
+        }));
+      }
+
       const sess = await chatListSessions();
-      setSessions(sess as any);
-    } catch (e: any) {
-      let msg = `ขอโทษนะ ตอนนี้ส่งไม่สำเร็จ (${e?.message ?? 'error'})`;
-      if (e instanceof ApiError && e.status === 401) msg = 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่';
+      setSessions(sess);
+    } catch (e: unknown) {
+      let msg = `ขอโทษนะ ตอนนี้ส่งไม่สำเร็จ (${e instanceof Error ? e.message : 'error'})`;
+      if (e instanceof ApiError && e.status === 401) {
+        msg = 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่';
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -175,7 +249,8 @@ export default function ChatShell() {
           role: 'assistant',
           content: msg,
           createdAt: new Date().toISOString(),
-        } as any,
+          sources: null,
+        },
       ]);
     } finally {
       setIsSending(false);
@@ -193,32 +268,51 @@ export default function ChatShell() {
 
   return (
     <div className="w-full">
-      {/* Outer card (เหมือนรูป 2) */}
-      <div className="w-full max-w-[1200px] mx-auto">
-        <div className="rounded-[28px] overflow-hidden shadow-xl ring-1 ring-white/25 bg-white/10 backdrop-blur-md">
-          <div className="h-[700px] grid grid-cols-[320px_1fr]">
-            {/* LEFT SIDEBAR */}
-            <aside className="relative p-6">
-              <div className="text-white/90 font-semibold text-2xl">History</div>
+      <div className="mx-auto w-full max-w-[1200px]">
+        <div className="overflow-hidden rounded-[28px] bg-white/10 shadow-xl ring-1 ring-white/25 backdrop-blur-md">
+          <div className="grid h-[calc(100vh-48px)] min-h-[560px] max-h-[700px] grid-cols-[320px_minmax(0,1fr)]">
+            <aside className="relative flex h-full min-h-0 flex-col p-6">
+              <div className="shrink-0 text-2xl font-semibold text-white/90">History</div>
 
-              <div className="mt-6 space-y-3">
+              <div className="mt-6 flex-1 min-h-0 overflow-y-auto pr-2 space-y-2">
                 {sessions.map((s) => {
                   const isActive = s.id === activeId;
+                  const isDeleting = deletingId === s.id;
+
                   return (
-                    <button
+                    <div
                       key={s.id}
-                      type="button"
-                      onClick={() => selectSession(s.id)}
                       className={[
-                        'w-full text-left transition',
-                        'px-0 py-2',
-                        isActive ? 'text-white/95' : 'text-white/70 hover:text-white/90',
+                        'group flex items-center gap-2 rounded-xl px-2 py-1 transition',
+                        isActive ? 'bg-white/10' : 'hover:bg-white/5',
                       ].join(' ')}
                     >
-                      <div className="font-medium truncate underline underline-offset-4 decoration-white/35">
-                        {s.title}
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => selectSession(s.id)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <div
+                          className={[
+                            'truncate font-medium underline underline-offset-4 decoration-white/35 transition',
+                            isActive ? 'text-white/95' : 'text-white/70 hover:text-white/90',
+                          ].join(' ')}
+                          title={s.title}
+                        >
+                          {s.title}
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void deleteSession(s.id)}
+                        disabled={isDeleting || isBooting}
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                        title="ลบแชท"
+                      >
+                        {isDeleting ? '…' : '✕'}
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -226,43 +320,35 @@ export default function ChatShell() {
               <button
                 type="button"
                 onClick={() => void createNewSession()}
-                className="mt-6 text-white/80 hover:text-white text-sm underline underline-offset-4 decoration-white/35"
+                className="mt-4 shrink-0 text-left text-sm text-white/80 underline underline-offset-4 decoration-white/35 hover:text-white"
                 disabled={isBooting}
               >
                 + New
               </button>
 
-              {/* vertical divider */}
               <div className="absolute top-0 right-0 h-full w-px bg-white/30" />
             </aside>
 
-            {/* RIGHT CHAT */}
-            <section className="relative">
-              {/* top bar (เส้นแนวนอน + home icon) */}
-              <div className="h-[86px] flex items-center justify-between px-8">
-                <div className="text-white/0 select-none">.</div>
+            <section className="flex h-full min-h-0 flex-col">
+              <div className="flex h-[86px] shrink-0 items-center justify-end px-8">
                 <button
                   type="button"
                   onClick={() => router.push('/')}
-                  className="w-11 h-11 rounded-2xl bg-white/15 hover:bg-white/25 transition grid place-items-center"
+                  className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 transition hover:bg-white/25"
                   title="Home"
                 >
-                  <span className="text-white text-xl">🏠</span>
+                  <span className="text-xl text-white">🏠</span>
                 </button>
               </div>
-              <div className="h-px bg-white/30" />
 
-              {/* message area */}
-              <div className="absolute inset-x-0 top-[87px] bottom-[88px] px-10 py-8">
-                <div
-                  ref={listRef}
-                  className="h-full overflow-auto pr-2"
-                >
-                  {/* empty state like รูป 2 */}
+              <div className="h-px shrink-0 bg-white/30" />
+
+              <div className="flex-1 min-h-0 px-10 py-8">
+                <div ref={listRef} className="h-full overflow-y-auto pr-2">
                   {!hasRealMessages ? (
-                    <div className="h-full grid place-items-center text-center">
+                    <div className="grid h-full place-items-center text-center">
                       <div className="text-white/80">
-                        <div className="text-2xl mb-3">✨</div>
+                        <div className="mb-3 text-2xl">✨</div>
                         <div className="text-xl font-medium">สนใจเรียนวิชาแบบไหน?</div>
                       </div>
                     </div>
@@ -274,20 +360,22 @@ export default function ChatShell() {
                           <div
                             key={m.id}
                             className={[
-                              'max-w-[70%] rounded-3xl px-5 py-3 whitespace-pre-wrap',
+                              'max-w-[70%] whitespace-pre-wrap rounded-3xl px-5 py-3',
                               isUser
                                 ? 'ml-auto bg-white/90 text-black'
                                 : 'mr-auto bg-white/70 text-black',
                             ].join(' ')}
                           >
                             <div className="text-sm">{m.content}</div>
-                            <div className="text-[11px] opacity-60 mt-1">{formatTime(m.createdAt)}</div>
+                            <div className="mt-1 text-[11px] opacity-60">
+                              {formatTime(m.createdAt)}
+                            </div>
                           </div>
                         );
                       })}
 
                       {isSending && (
-                        <div className="mr-auto max-w-[70%] rounded-3xl px-5 py-3 bg-white/50 text-black">
+                        <div className="mr-auto max-w-[70%] rounded-3xl bg-white/50 px-5 py-3 text-black">
                           <div className="text-sm opacity-80">AI กำลังตอบ...</div>
                         </div>
                       )}
@@ -296,27 +384,28 @@ export default function ChatShell() {
                 </div>
               </div>
 
-              {/* input bar inside card */}
-              <div className="absolute inset-x-0 bottom-0 h-[88px] px-10 flex items-center">
-                <div className="w-full bg-white/70 rounded-2xl px-4 py-3 flex items-center gap-4">
+              <div className="shrink-0 px-10 pb-6 pt-3">
+                <div className="flex items-center gap-4 rounded-2xl bg-white/70 px-4 py-3">
                   <input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={onKeyDown}
                     placeholder="ASK..."
-                    className="flex-1 bg-transparent outline-none text-black placeholder:text-black/40"
+                    className="flex-1 bg-transparent text-black outline-none placeholder:text-black/40"
                     disabled={isBooting || !activeId}
                   />
                   <button
                     type="button"
                     onClick={() => void send()}
                     disabled={isSending || isBooting || !input.trim() || !activeId}
-                    className="w-11 h-11 rounded-xl bg-white/70 hover:bg-white disabled:opacity-60 grid place-items-center"
+                    className="grid h-11 w-11 place-items-center rounded-xl bg-white/70 hover:bg-white disabled:opacity-60"
                     title="Send"
                   >
-                    <span className="text-black/70 text-xl">➤</span>
+                    <span className="text-xl text-black/70">➤</span>
                   </button>
                 </div>
+
+                
               </div>
             </section>
           </div>
